@@ -10,6 +10,7 @@ import '../../core/widgets/empty_state.dart';
 import '../../data/models/cart_item.dart';
 import '../../data/models/product.dart';
 import '../../data/repos/providers.dart';
+import '../dashboard/dashboard_provider.dart';
 import '../products/product_provider.dart';
 import 'cart_provider.dart';
 
@@ -56,9 +57,12 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
       await ref.read(saleRepoProvider).recordSale(cart);
       ref.read(cartProvider.notifier).clear();
       ref.invalidate(productsProvider);
+      ref.invalidate(dashboardProvider);
       _showSnack('Sale recorded successfully!');
     } on AppException catch (e) {
       _showSnack(e.message, error: true);
+    } catch (e) {
+      _showSnack('Failed to finalize sale: $e', error: true);
     } finally {
       setState(() => _finalizing = false);
     }
@@ -149,7 +153,7 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
                       Container(
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: cs.primaryContainer.withOpacity(0.3),
+                          color: cs.primaryContainer.withValues(alpha: 0.3),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
@@ -226,6 +230,29 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
                                 trailing: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.remove, size: 18),
+                                      onPressed:
+                                          () => ref
+                                              .read(cartProvider.notifier)
+                                              .decrement(item.productId),
+                                      tooltip: 'Decrease quantity',
+                                    ),
+                                    Text(
+                                      item.quantity.toString(),
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.add, size: 18),
+                                      onPressed:
+                                          () => ref
+                                              .read(cartProvider.notifier)
+                                              .increment(item.productId),
+                                      tooltip: 'Increase quantity',
+                                    ),
+                                    const SizedBox(width: 4),
                                     Text(
                                       Fmt.currency(item.total),
                                       style: const TextStyle(
@@ -243,6 +270,7 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
                                           () => ref
                                               .read(cartProvider.notifier)
                                               .remove(item.productId),
+                                      tooltip: 'Remove item',
                                     ),
                                   ],
                                 ),

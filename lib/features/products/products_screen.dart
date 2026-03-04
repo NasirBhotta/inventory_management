@@ -27,6 +27,8 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
   final _min = TextEditingController();
   Product? _editing;
   String _search = '';
+  String? _selectedCategory;
+  bool _lowStockOnly = false;
 
   @override
   void dispose() {
@@ -78,6 +80,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
       }
       _clearForm();
       ref.invalidate(productsProvider);
+      ref.invalidate(categoriesProvider);
     } on AppException catch (e) {
       _showSnack(e.message, error: true);
     }
@@ -108,6 +111,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
     if (ok == true) {
       await ref.read(productRepoProvider).delete(p.id!);
       ref.invalidate(productsProvider);
+      ref.invalidate(categoriesProvider);
       _showSnack('Deleted "${p.name}"');
     }
   }
@@ -124,11 +128,11 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
   @override
   Widget build(BuildContext context) {
     final productsAsync = ref.watch(productsProvider);
+    final categoriesAsync = ref.watch(categoriesProvider);
     final cs = Theme.of(context).colorScheme;
 
     return Row(
       children: [
-        // ── Left: Form ─────────────────────────────────────────────────────
         SizedBox(
           width: 300,
           child: Card(
@@ -202,27 +206,76 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
             ),
           ),
         ),
-        // ── Right: Table ───────────────────────────────────────────────────
         Expanded(
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
               children: [
-                SectionHeader(
-                  title: 'Product Catalog',
-                  action: SizedBox(
-                    width: 220,
-                    child: TextField(
-                      decoration: const InputDecoration(
-                        hintText: 'Search products…',
-                        prefixIcon: Icon(Icons.search, size: 18),
-                        isDense: true,
+                const SectionHeader(title: 'Product Catalog'),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        decoration: const InputDecoration(
+                          hintText: 'Search products...',
+                          prefixIcon: Icon(Icons.search, size: 18),
+                          isDense: true,
+                        ),
+                        onChanged:
+                            (v) => setState(() => _search = v.toLowerCase()),
                       ),
-                      onChanged:
-                          (v) => setState(() => _search = v.toLowerCase()),
                     ),
-                  ),
+                    const SizedBox(width: 12),
+                    SizedBox(
+                      width: 180,
+                      child: categoriesAsync.when(
+                        loading:
+                            () => const SizedBox(
+                              height: 36,
+                              child: LinearProgressIndicator(),
+                            ),
+                        error:
+                            (_, __) => const Text(
+                              'Categories unavailable',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                        data:
+                            (categories) => DropdownButtonFormField<String?>(
+                              isExpanded: true,
+                              value: _selectedCategory,
+                              decoration: const InputDecoration(
+                                labelText: 'Category',
+                                isDense: true,
+                              ),
+                              items: [
+                                const DropdownMenuItem<String?>(
+                                  value: null,
+                                  child: Text('All'),
+                                ),
+                                ...categories.map(
+                                  (c) => DropdownMenuItem<String?>(
+                                    value: c,
+                                    child: Text(
+                                      c,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                              onChanged:
+                                  (v) => setState(() => _selectedCategory = v),
+                            ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    FilterChip(
+                      label: const Text('Low stock'),
+                      selected: _lowStockOnly,
+                      onSelected: (v) => setState(() => _lowStockOnly = v),
+                    ),
+                  ],
                 ),
+                const SizedBox(height: 12),
                 Expanded(
                   child: productsAsync.when(
                     loading:
@@ -237,12 +290,19 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                                     p.name.toLowerCase().contains(_search) ||
                                     p.category.toLowerCase().contains(_search),
                               )
+                              .where(
+                                (p) =>
+                                    _selectedCategory == null ||
+                                    p.category == _selectedCategory,
+                              )
+                              .where((p) => !_lowStockOnly || p.isLowStock)
                               .toList();
-                      if (filtered.isEmpty)
+                      if (filtered.isEmpty) {
                         return const EmptyState(
                           icon: Icons.inventory_2,
                           message: 'No products found',
                         );
+                      }
                       return DataTable2(
                         columnSpacing: 16,
                         horizontalMargin: 12,
@@ -276,9 +336,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                                       DataCell(Text(Fmt.currency(p.unitPrice))),
                                       DataCell(Text(Fmt.qty(p.quantity))),
                                       DataCell(Text(p.minimumStock.toString())),
-                                      DataCell(
-                                        Text(Fmt.currency(p.totalValue)),
-                                      ),
+                                      DataCell(Text(Fmt.currency(p.totalValue))),
                                       DataCell(
                                         p.isLowStock
                                             ? Chip(

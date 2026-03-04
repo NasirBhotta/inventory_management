@@ -14,63 +14,68 @@ class SalesRepository {
     if (cart.isEmpty) {
       throw const ValidationException('Cart is empty');
     }
+    try {
+      final db = await _db.db;
+      return await db.transaction((txn) async {
+        final total = cart.fold<double>(0, (s, i) => s + i.lineTotal);
 
-    final db = await _db.db;
-    return await db.transaction((txn) async {
-      final total = cart.fold<double>(0, (s, i) => s + i.lineTotal);
+        final saleId = await txn.insert(TableNames.sales, {
+          'sale_date': DateTime.now().toIso8601String(),
+          'total_amount': total,
+          'note': note,
+        });
 
-      final saleId = await txn.insert(TableNames.sales, {
-        'sale_date': DateTime.now().toIso8601String(),
-        'total_amount': total,
-        'note': note,
+        for (final item in cart) {
+          final rows = await txn.query(
+            TableNames.products,
+            where: 'id = ?',
+            whereArgs: [item.productId],
+          );
+          if (rows.isEmpty) {
+            throw DatabaseException('Product not found: ${item.productName}');
+          }
+
+          final current = rows.first['quantity'] as int;
+          if (current < item.quantity) {
+            throw InsufficientStockException(item.productName);
+          }
+
+          await txn.update(
+            TableNames.products,
+            {
+              'quantity': current - item.quantity,
+              'updated_at': DateTime.now().toIso8601String(),
+            },
+            where: 'id = ?',
+            whereArgs: [item.productId],
+          );
+
+          await txn.insert(TableNames.stock, {
+            'product_id': item.productId,
+            'movement_type': 'OUT',
+            'quantity': item.quantity,
+            'note': 'Sale #$saleId',
+            'movement_date': DateTime.now().toIso8601String(),
+          });
+
+          await txn.insert(TableNames.saleItems, {
+            'sale_id': saleId,
+            'product_id': item.productId,
+            'quantity': item.quantity,
+            'unit_price': item.unitPrice,
+          });
+        }
+
+        appLogger.i(
+          'Sale #$saleId created. Total: $total. Items: ${cart.length}',
+        );
+        return saleId;
       });
-
-      for (final item in cart) {
-        final rows = await txn.query(
-          TableNames.products,
-          where: 'id = ?',
-          whereArgs: [item.productId],
-        );
-        if (rows.isEmpty) {
-          throw DatabaseException('Product not found: ${item.productName}');
-        }
-
-        final current = rows.first['quantity'] as int;
-        if (current < item.quantity) {
-          throw InsufficientStockException(item.productName);
-        }
-
-        await txn.update(
-          TableNames.products,
-          {
-            'quantity': current - item.quantity,
-            'updated_at': DateTime.now().toIso8601String(),
-          },
-          where: 'id = ?',
-          whereArgs: [item.productId],
-        );
-
-        await txn.insert(TableNames.stock, {
-          'product_id': item.productId,
-          'movement_type': 'OUT',
-          'quantity': item.quantity,
-          'note': 'Sale #$saleId',
-          'movement_date': DateTime.now().toIso8601String(),
-        });
-
-        await txn.insert(TableNames.saleItems, {
-          'sale_id': saleId,
-          'product_id': item.productId,
-          'quantity': item.quantity,
-          'unit_price': item.unitPrice,
-        });
-      }
-
-      appLogger.i(
-        'Sale #$saleId created. Total: $total. Items: ${cart.length}',
-      );
-      return saleId;
-    });
+    } on AppException {
+      rethrow;
+    } catch (e) {
+      throw DatabaseException('Failed to record sale', e);
+    }
   }
 
   Future<List<Sale>> getSales({DateTime? from, DateTime? to}) async {

@@ -1,7 +1,10 @@
+import 'dart:io';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/widgets/stat_card.dart';
 import '../../core/widgets/section_header.dart';
@@ -11,6 +14,65 @@ import 'dashboard_provider.dart';
 
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
+
+  Future<void> _exportReport(
+    BuildContext context,
+    WidgetRef ref,
+    DashboardStats stats,
+  ) async {
+    try {
+      final repo = ref.read(saleRepoProvider);
+      final trend = await repo.getDailySales(days: 14);
+
+      final appDir = await getApplicationSupportDirectory();
+      final exportDir = Directory(p.join(appDir.path, 'exports'))
+        ..createSync(recursive: true);
+
+      final now = DateTime.now();
+      final stamp = now.toIso8601String().replaceAll(':', '-');
+      final file = File(p.join(exportDir.path, 'dashboard_report_$stamp.csv'));
+
+      final sb = StringBuffer();
+      sb.writeln('Inventory Dashboard Report');
+      sb.writeln('Generated At,${now.toIso8601String()}');
+      sb.writeln();
+      sb.writeln('Metric,Value');
+      sb.writeln('Total Products,${stats.totalProducts}');
+      sb.writeln('Units in Stock,${stats.totalUnits}');
+      sb.writeln('Stock Value,${stats.totalValue}');
+      sb.writeln('Today Sales,${stats.todaySales}');
+      sb.writeln('Month Sales,${stats.monthSales}');
+      sb.writeln('Low Stock Count,${stats.lowStockCount}');
+      sb.writeln();
+      sb.writeln('Low Stock Items');
+      sb.writeln('Name,Category,Quantity,Minimum');
+      for (final item in stats.lowStockItems) {
+        sb.writeln(
+          '"${item.name.replaceAll('"', '""')}","${item.category.replaceAll('"', '""')}",${item.quantity},${item.minimumStock}',
+        );
+      }
+      sb.writeln();
+      sb.writeln('14-Day Sales Trend');
+      sb.writeln('Day,Total');
+      for (final row in trend) {
+        sb.writeln('${row['day']},${row['total'] ?? 0}');
+      }
+
+      await file.writeAsString(sb.toString());
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Report exported to: ${file.path}')),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Export failed: $e'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -50,7 +112,7 @@ class DashboardScreen extends ConsumerWidget {
                   ],
                 ),
                 FilledButton.icon(
-                  onPressed: () {},
+                  onPressed: () => _exportReport(context, ref, stats),
                   icon: const Icon(Icons.download, size: 18),
                   label: const Text('Export Report'),
                 )
@@ -174,7 +236,7 @@ class _SalesChart extends StatelessWidget {
                         show: true,
                         drawVerticalLine: false,
                         getDrawingHorizontalLine: (_) => FlLine(
-                          color: cs.outlineVariant.withOpacity(0.3),
+                          color: cs.outlineVariant.withValues(alpha: 0.3),
                           strokeWidth: 1,
                           dashArray: [5, 5],
                         ),
@@ -248,8 +310,8 @@ class _SalesChart extends StatelessWidget {
                               begin: Alignment.topCenter,
                               end: Alignment.bottomCenter,
                               colors: [
-                                cs.primary.withOpacity(0.3),
-                                cs.primary.withOpacity(0.0),
+                                cs.primary.withValues(alpha: 0.3),
+                                cs.primary.withValues(alpha: 0.0),
                               ],
                             ),
                           ),
@@ -316,7 +378,9 @@ class _LowStockList extends StatelessWidget {
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                    color: cs.surfaceContainerLowest,
-                   border: Border.all(color: cs.outlineVariant.withOpacity(0.4)),
+                   border: Border.all(
+                     color: cs.outlineVariant.withValues(alpha: 0.4),
+                   ),
                    borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(
@@ -324,7 +388,7 @@ class _LowStockList extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: cs.errorContainer.withOpacity(0.5),
+                        color: cs.errorContainer.withValues(alpha: 0.5),
                         shape: BoxShape.circle,
                       ),
                       child: Icon(Icons.warning_rounded, color: cs.error, size: 18),

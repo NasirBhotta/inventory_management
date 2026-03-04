@@ -23,6 +23,8 @@ class _StockScreenState extends ConsumerState<StockScreen> {
   final _formKey = GlobalKey<FormState>();
   Product? _selected;
   MovementType _type = MovementType.in_;
+  MovementType? _historyType;
+  String _historySearch = '';
   final _qty = TextEditingController();
   final _note = TextEditingController();
 
@@ -160,6 +162,15 @@ class _StockScreenState extends ConsumerState<StockScreen> {
                       ),
                       label: Text('Record ${_type.label}'),
                     ),
+                    const SizedBox(height: 8),
+                    OutlinedButton(
+                      onPressed: () {
+                        setState(() => _selected = null);
+                        _qty.clear();
+                        _note.clear();
+                      },
+                      child: const Text('Clear Form'),
+                    ),
                   ],
                 ),
               ),
@@ -173,27 +184,82 @@ class _StockScreenState extends ConsumerState<StockScreen> {
             child: Column(
               children: [
                 const SectionHeader(title: 'Movement History'),
+                Row(
+                  children: [
+                    SegmentedButton<MovementType?>(
+                      segments: const [
+                        ButtonSegment<MovementType?>(
+                          value: null,
+                          label: Text('All'),
+                        ),
+                        ButtonSegment<MovementType?>(
+                          value: MovementType.in_,
+                          label: Text('IN'),
+                        ),
+                        ButtonSegment<MovementType?>(
+                          value: MovementType.out,
+                          label: Text('OUT'),
+                        ),
+                      ],
+                      selected: {_historyType},
+                      onSelectionChanged:
+                          (s) => setState(() => _historyType = s.first),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextField(
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          hintText: 'Search by product or note...',
+                          prefixIcon: Icon(Icons.search, size: 18),
+                        ),
+                        onChanged:
+                            (v) =>
+                                setState(() => _historySearch = v.toLowerCase()),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
                 Expanded(
                   child: movementsAsync.when(
                     loading:
                         () => const Center(child: CircularProgressIndicator()),
                     error: (e, _) => Center(child: Text('$e')),
                     data: (movements) {
-                      if (movements.isEmpty)
+                      final filtered =
+                          movements
+                              .where(
+                                (m) =>
+                                    _historyType == null ||
+                                    m.type == _historyType,
+                              )
+                              .where((m) {
+                                if (_historySearch.isEmpty) return true;
+                                return m.productName.toLowerCase().contains(
+                                      _historySearch,
+                                    ) ||
+                                    m.note.toLowerCase().contains(
+                                      _historySearch,
+                                    );
+                              })
+                              .toList();
+                      if (filtered.isEmpty) {
                         return const EmptyState(
                           icon: Icons.swap_horiz,
-                          message: 'No movements recorded yet',
+                          message: 'No matching movements',
                         );
+                      }
                       return ListView.separated(
-                        itemCount: movements.length,
+                        itemCount: filtered.length,
                         separatorBuilder: (_, __) => const Divider(height: 1),
                         itemBuilder: (_, i) {
-                          final m = movements[i];
+                          final m = filtered[i];
                           final isIn = m.type == MovementType.in_;
                           return ListTile(
                             leading: CircleAvatar(
                               backgroundColor: (isIn ? Colors.green : cs.error)
-                                  .withOpacity(0.1),
+                                  .withValues(alpha: 0.1),
                               child: Icon(
                                 isIn
                                     ? Icons.arrow_downward

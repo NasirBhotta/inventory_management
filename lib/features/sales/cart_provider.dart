@@ -20,6 +20,28 @@ class CartNotifier extends StateNotifier<List<CartItem>> {
     state = state.where((e) => e.productId != productId).toList();
   }
 
+  void increment(int productId) {
+    final index = state.indexWhere((e) => e.productId == productId);
+    if (index == -1) return;
+    final updated = [...state];
+    final existing = updated[index];
+    updated[index] = existing.copyWith(quantity: existing.quantity + 1);
+    state = updated;
+  }
+
+  void decrement(int productId) {
+    final index = state.indexWhere((e) => e.productId == productId);
+    if (index == -1) return;
+    final updated = [...state];
+    final existing = updated[index];
+    if (existing.quantity <= 1) {
+      updated.removeAt(index);
+    } else {
+      updated[index] = existing.copyWith(quantity: existing.quantity - 1);
+    }
+    state = updated;
+  }
+
   void clear() {
     state = const [];
   }
