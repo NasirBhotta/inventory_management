@@ -28,6 +28,15 @@ class _StockScreenState extends ConsumerState<StockScreen> {
   final _qty = TextEditingController();
   final _note = TextEditingController();
 
+  Product? _resolveSelected(List<Product> products) {
+    final selectedId = _selected?.id;
+    if (selectedId == null) return null;
+    for (final p in products) {
+      if (p.id == selectedId) return p;
+    }
+    return null;
+  }
+
   @override
   void dispose() {
     _qty.dispose();
@@ -99,9 +108,15 @@ class _StockScreenState extends ConsumerState<StockScreen> {
                     productsAsync.when(
                       loading: () => const LinearProgressIndicator(),
                       error: (e, _) => Text('$e'),
-                      data:
-                          (products) => DropdownButtonFormField<Product>(
-                            value: _selected,
+                      data: (products) {
+                        final selected = _resolveSelected(products);
+                        if (_selected != null && selected == null) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (mounted) setState(() => _selected = null);
+                          });
+                        }
+                        return DropdownButtonFormField<Product>(
+                            value: selected,
                             decoration: const InputDecoration(
                               labelText: 'Select Product',
                             ),
@@ -120,7 +135,8 @@ class _StockScreenState extends ConsumerState<StockScreen> {
                                     .toList(),
                             onChanged: (v) => setState(() => _selected = v),
                             validator: (v) => v == null ? 'Required' : null,
-                          ),
+                          );
+                      },
                     ),
                     const SizedBox(height: 12),
                     SegmentedButton<MovementType>(

@@ -26,6 +26,15 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
   final _formKey = GlobalKey<FormState>();
   bool _finalizing = false;
 
+  Product? _resolveSelected(List<Product> products) {
+    final selectedId = _selected?.id;
+    if (selectedId == null) return null;
+    for (final p in products) {
+      if (p.id == selectedId) return p;
+    }
+    return null;
+  }
+
   @override
   void dispose() {
     _qty.dispose();
@@ -108,9 +117,15 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
                     productsAsync.when(
                       loading: () => const LinearProgressIndicator(),
                       error: (e, _) => Text('$e'),
-                      data:
-                          (products) => DropdownButtonFormField<Product>(
-                            value: _selected,
+                      data: (products) {
+                        final selected = _resolveSelected(products);
+                        if (_selected != null && selected == null) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (mounted) setState(() => _selected = null);
+                          });
+                        }
+                        return DropdownButtonFormField<Product>(
+                            value: selected,
                             decoration: const InputDecoration(
                               labelText: 'Select Product',
                             ),
@@ -146,7 +161,8 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
                             onChanged: (v) => setState(() => _selected = v),
                             validator:
                                 (v) => v == null ? 'Select a product' : null,
-                          ),
+                          );
+                      },
                     ),
                     if (_selected != null) ...[
                       const SizedBox(height: 8),
