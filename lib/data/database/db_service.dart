@@ -95,6 +95,31 @@ class DatabaseService {
       )
     ''');
 
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS debt_customers (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        name        TEXT    NOT NULL,
+        phone       TEXT    NOT NULL,
+        address     TEXT    NOT NULL DEFAULT '',
+        notes       TEXT    NOT NULL DEFAULT '',
+        created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+        updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS debt_entries (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        customer_id INTEGER NOT NULL REFERENCES debt_customers(id) ON DELETE CASCADE,
+        item_name   TEXT    NOT NULL,
+        quantity    INTEGER NOT NULL DEFAULT 1,
+        amount_due  REAL    NOT NULL DEFAULT 0,
+        note        TEXT    NOT NULL DEFAULT '',
+        entry_date  TEXT    NOT NULL DEFAULT (datetime('now')),
+        is_paid     INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+
     // Indexes for common queries
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_sales_date ON sales(sale_date)',
@@ -104,6 +129,12 @@ class DatabaseService {
     );
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_sale_items_sale ON sale_items(sale_id)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_debt_entries_customer ON debt_entries(customer_id)',
+    );
+    await db.execute(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_debt_customers_phone ON debt_customers(phone)',
     );
 
     await _ensureLegacyColumns(db);
@@ -187,6 +218,48 @@ class DatabaseService {
       table: 'sale_items',
       column: 'unit_price',
       definition: 'REAL NOT NULL DEFAULT 0',
+    );
+    await _ensureColumn(
+      db,
+      table: 'debt_customers',
+      column: 'address',
+      definition: 'TEXT NOT NULL DEFAULT \'\'',
+    );
+    await _ensureColumn(
+      db,
+      table: 'debt_customers',
+      column: 'notes',
+      definition: 'TEXT NOT NULL DEFAULT \'\'',
+    );
+    await _ensureColumn(
+      db,
+      table: 'debt_customers',
+      column: 'created_at',
+      definition: 'TEXT',
+    );
+    await _ensureColumn(
+      db,
+      table: 'debt_customers',
+      column: 'updated_at',
+      definition: 'TEXT',
+    );
+    await _ensureColumn(
+      db,
+      table: 'debt_entries',
+      column: 'note',
+      definition: 'TEXT NOT NULL DEFAULT \'\'',
+    );
+    await _ensureColumn(
+      db,
+      table: 'debt_entries',
+      column: 'entry_date',
+      definition: 'TEXT',
+    );
+    await _ensureColumn(
+      db,
+      table: 'debt_entries',
+      column: 'is_paid',
+      definition: 'INTEGER NOT NULL DEFAULT 0',
     );
   }
 

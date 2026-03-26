@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/dashboard/dashboard_screen.dart';
+import '../features/debts/debts_screen.dart';
 import '../features/products/products_screen.dart';
 import '../features/stock/stock_screen.dart';
 import '../features/sales/sales_screen.dart';
@@ -40,6 +41,11 @@ class _AppShellState extends ConsumerState<AppShell> {
       label: Text('Sales'),
     ),
     NavigationRailDestination(
+      icon: Icon(Icons.person_search_outlined),
+      selectedIcon: Icon(Icons.person_search),
+      label: Text('Debts'),
+    ),
+    NavigationRailDestination(
       icon: Icon(Icons.bar_chart_outlined),
       selectedIcon: Icon(Icons.bar_chart),
       label: Text('Reports'),
@@ -56,6 +62,7 @@ class _AppShellState extends ConsumerState<AppShell> {
     ProductsScreen(),
     StockScreen(),
     SalesScreen(),
+    DebtsScreen(),
     ReportsScreen(),
     BackupScreen(),
   ];
