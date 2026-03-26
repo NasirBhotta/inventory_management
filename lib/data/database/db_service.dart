@@ -111,8 +111,10 @@ class DatabaseService {
       CREATE TABLE IF NOT EXISTS debt_entries (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
         customer_id INTEGER NOT NULL REFERENCES debt_customers(id) ON DELETE CASCADE,
+        product_id  INTEGER NOT NULL REFERENCES products(id),
         item_name   TEXT    NOT NULL,
         quantity    INTEGER NOT NULL DEFAULT 1,
+        unit_price  REAL    NOT NULL DEFAULT 0,
         amount_due  REAL    NOT NULL DEFAULT 0,
         note        TEXT    NOT NULL DEFAULT '',
         entry_date  TEXT    NOT NULL DEFAULT (datetime('now')),
@@ -242,6 +244,18 @@ class DatabaseService {
       table: 'debt_customers',
       column: 'updated_at',
       definition: 'TEXT',
+    );
+    await _ensureColumn(
+      db,
+      table: 'debt_entries',
+      column: 'product_id',
+      definition: 'INTEGER NOT NULL DEFAULT 0',
+    );
+    await _ensureColumn(
+      db,
+      table: 'debt_entries',
+      column: 'unit_price',
+      definition: 'REAL NOT NULL DEFAULT 0',
     );
     await _ensureColumn(
       db,

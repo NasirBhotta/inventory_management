@@ -4,8 +4,10 @@ class DebtEntry extends Equatable {
   const DebtEntry({
     this.id,
     required this.customerId,
+    required this.productId,
     required this.itemName,
     required this.quantity,
+    required this.unitPrice,
     required this.amountDue,
     this.note = '',
     this.entryDate,
@@ -14,8 +16,10 @@ class DebtEntry extends Equatable {
 
   final int? id;
   final int customerId;
+  final int productId;
   final String itemName;
   final int quantity;
+  final double unitPrice;
   final double amountDue;
   final String note;
   final DateTime? entryDate;
@@ -24,8 +28,10 @@ class DebtEntry extends Equatable {
   factory DebtEntry.fromMap(Map<String, Object?> map) => DebtEntry(
     id: map['id'] as int?,
     customerId: map['customer_id'] as int,
+    productId: map['product_id'] as int? ?? 0,
     itemName: map['item_name'] as String? ?? '',
     quantity: map['quantity'] as int? ?? 0,
+    unitPrice: (map['unit_price'] as num?)?.toDouble() ?? 0,
     amountDue: (map['amount_due'] as num?)?.toDouble() ?? 0,
     note: map['note'] as String? ?? '',
     entryDate:
@@ -38,8 +44,10 @@ class DebtEntry extends Equatable {
   Map<String, Object?> toMap() => {
     if (id != null) 'id': id,
     'customer_id': customerId,
+    'product_id': productId,
     'item_name': itemName,
     'quantity': quantity,
+    'unit_price': unitPrice,
     'amount_due': amountDue,
     'note': note,
     'is_paid': isPaid ? 1 : 0,
@@ -49,8 +57,10 @@ class DebtEntry extends Equatable {
   List<Object?> get props => [
     id,
     customerId,
+    productId,
     itemName,
     quantity,
+    unitPrice,
     amountDue,
     note,
     entryDate,

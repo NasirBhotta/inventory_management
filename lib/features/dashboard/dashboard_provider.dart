@@ -12,6 +12,7 @@ class DashboardStats {
     required this.lowStockCount,
     required this.todaySales,
     required this.monthSales,
+    required this.outstandingDebt,
     required this.lowStockItems,
   });
   final int totalProducts;
@@ -20,6 +21,7 @@ class DashboardStats {
   final int lowStockCount;
   final double todaySales;
   final double monthSales;
+  final double outstandingDebt;
   final List<Product> lowStockItems;
 }
 
@@ -27,6 +29,7 @@ class DashboardStats {
 Future<DashboardStats> dashboard(DashboardRef ref) async {
   final products = await ref.watch(productRepoProvider).getAll();
   final sales = await ref.watch(saleRepoProvider).getSummary();
+  final outstandingDebt = await ref.watch(debtRepoProvider).getOutstandingTotal();
   final lowStock = products.where((p) => p.isLowStock).toList();
 
   return DashboardStats(
@@ -36,6 +39,7 @@ Future<DashboardStats> dashboard(DashboardRef ref) async {
     lowStockCount: lowStock.length,
     todaySales: sales['today'] ?? 0,
     monthSales: sales['month'] ?? 0,
+    outstandingDebt: outstandingDebt,
     lowStockItems: lowStock,
   );
 }

@@ -42,6 +42,7 @@ class DashboardScreen extends ConsumerWidget {
       sb.writeln('Stock Value,${stats.totalValue}');
       sb.writeln('Today Sales,${stats.todaySales}');
       sb.writeln('Month Sales,${stats.monthSales}');
+      sb.writeln('Outstanding Debt,${stats.outstandingDebt}');
       sb.writeln('Low Stock Count,${stats.lowStockCount}');
       sb.writeln();
       sb.writeln('Low Stock Items');
@@ -156,6 +157,12 @@ class DashboardScreen extends ConsumerWidget {
                   value: Fmt.currency(stats.monthSales),
                   icon: Icons.calendar_month_rounded,
                   color: const Color(0xFF8B5CF6), // Violet
+                ),
+                StatCard(
+                  label: 'Outstanding Debt',
+                  value: Fmt.currency(stats.outstandingDebt),
+                  icon: Icons.request_quote_rounded,
+                  color: const Color(0xFFB45309),
                 ),
                 StatCard(
                   label: 'Low Stock Alerts',

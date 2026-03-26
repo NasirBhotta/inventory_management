@@ -19,14 +19,18 @@ void main() {
         entries: const [
           DebtEntry(
             customerId: 1,
+            productId: 11,
             itemName: 'Urea Bag',
             quantity: 2,
+            unitPrice: 500,
             amountDue: 1000,
           ),
           DebtEntry(
             customerId: 1,
+            productId: 12,
             itemName: 'Spray Bottle',
             quantity: 1,
+            unitPrice: 500,
             amountDue: 500,
           ),
         ],

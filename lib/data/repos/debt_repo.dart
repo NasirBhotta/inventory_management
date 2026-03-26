@@ -1,4 +1,5 @@
 import '../../core/errors/app_exceptions.dart';
+import '../../core/constants/app_constants.dart';
 import '../database/db_service.dart';
 import '../models/debt_customer.dart';
 import '../models/debt_entry.dart';
@@ -146,9 +147,48 @@ class DebtRepository {
       throw const ValidationException('Debt amount must be greater than zero');
     }
     final db = await _db.database;
-    await db.insert('debt_entries', {
-      ...entry.toMap(),
-      'entry_date': DateTime.now().toIso8601String(),
+    await db.transaction((txn) async {
+      final rows = await txn.query(
+        TableNames.products,
+        where: 'id = ?',
+        whereArgs: [entry.productId],
+        limit: 1,
+      );
+      if (rows.isEmpty) {
+        throw const AppException('Selected product no longer exists');
+      }
+
+      final product = rows.first;
+      final currentQuantity = product['quantity'] as int? ?? 0;
+      if (currentQuantity < entry.quantity) {
+        throw InsufficientStockException(product['name'] as String? ?? 'Product');
+      }
+
+      final timestamp = DateTime.now().toIso8601String();
+      await txn.insert('debt_entries', {
+        ...entry.toMap(),
+        'item_name': product['name'],
+        'unit_price': (product['unit_price'] as num?)?.toDouble() ?? entry.unitPrice,
+        'entry_date': timestamp,
+      });
+
+      await txn.update(
+        TableNames.products,
+        {
+          'quantity': currentQuantity - entry.quantity,
+          'updated_at': timestamp,
+        },
+        where: 'id = ?',
+        whereArgs: [entry.productId],
+      );
+
+      await txn.insert(TableNames.stock, {
+        'product_id': entry.productId,
+        'movement_type': 'OUT',
+        'quantity': entry.quantity,
+        'note': 'Debt for customer #${entry.customerId}',
+        'movement_date': timestamp,
+      });
     });
   }
 
@@ -164,6 +204,53 @@ class DebtRepository {
 
   Future<void> deleteEntry(int entryId) async {
     final db = await _db.database;
-    await db.delete('debt_entries', where: 'id = ?', whereArgs: [entryId]);
+    await db.transaction((txn) async {
+      final rows = await txn.query(
+        'debt_entries',
+        where: 'id = ?',
+        whereArgs: [entryId],
+        limit: 1,
+      );
+      if (rows.isEmpty) return;
+
+      final entry = DebtEntry.fromMap(rows.first);
+      final productRows = await txn.query(
+        TableNames.products,
+        where: 'id = ?',
+        whereArgs: [entry.productId],
+        limit: 1,
+      );
+
+      final timestamp = DateTime.now().toIso8601String();
+      if (productRows.isNotEmpty) {
+        final currentQuantity = productRows.first['quantity'] as int? ?? 0;
+        await txn.update(
+          TableNames.products,
+          {
+            'quantity': currentQuantity + entry.quantity,
+            'updated_at': timestamp,
+          },
+          where: 'id = ?',
+          whereArgs: [entry.productId],
+        );
+        await txn.insert(TableNames.stock, {
+          'product_id': entry.productId,
+          'movement_type': 'IN',
+          'quantity': entry.quantity,
+          'note': 'Debt entry removed #$entryId',
+          'movement_date': timestamp,
+        });
+      }
+
+      await txn.delete('debt_entries', where: 'id = ?', whereArgs: [entryId]);
+    });
+  }
+
+  Future<double> getOutstandingTotal() async {
+    final db = await _db.database;
+    final rows = await db.rawQuery(
+      'SELECT COALESCE(SUM(amount_due), 0) AS total FROM debt_entries WHERE is_paid = 0',
+    );
+    return (rows.first['total'] as num?)?.toDouble() ?? 0;
   }
 }

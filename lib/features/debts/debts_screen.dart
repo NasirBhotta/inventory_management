@@ -11,8 +11,11 @@ import '../../core/widgets/empty_state.dart';
 import '../../core/widgets/section_header.dart';
 import '../../data/models/debt_customer.dart';
 import '../../data/models/debt_entry.dart';
+import '../../data/models/product.dart';
 import '../../data/repos/debt_repo.dart';
 import '../../data/repos/providers.dart';
+import '../dashboard/dashboard_provider.dart';
+import '../products/product_provider.dart';
 import 'debt_message.dart';
 import 'debt_provider.dart';
 
@@ -30,13 +33,13 @@ class _DebtsScreenState extends ConsumerState<DebtsScreen> {
   final _phone = TextEditingController();
   final _address = TextEditingController();
   final _customerNotes = TextEditingController();
-  final _itemName = TextEditingController();
   final _quantity = TextEditingController(text: '1');
   final _amount = TextEditingController();
   final _entryNotes = TextEditingController();
 
   int? _selectedCustomerId;
   int? _editingCustomerId;
+  Product? _selectedProduct;
   String _search = '';
   bool _savingCustomer = false;
   bool _savingEntry = false;
@@ -48,7 +51,6 @@ class _DebtsScreenState extends ConsumerState<DebtsScreen> {
     _phone.dispose();
     _address.dispose();
     _customerNotes.dispose();
-    _itemName.dispose();
     _quantity.dispose();
     _amount.dispose();
     _entryNotes.dispose();
@@ -91,7 +93,11 @@ class _DebtsScreenState extends ConsumerState<DebtsScreen> {
   }
 
   void _clearEntryForm() {
-    _itemName.clear();
+    if (mounted) {
+      setState(() => _selectedProduct = null);
+    } else {
+      _selectedProduct = null;
+    }
     _quantity.text = '1';
     _amount.clear();
     _entryNotes.clear();
@@ -100,10 +106,31 @@ class _DebtsScreenState extends ConsumerState<DebtsScreen> {
 
   Future<void> _refreshDebtData() async {
     ref.invalidate(debtCustomersProvider);
+    ref.invalidate(productsProvider);
+    ref.invalidate(dashboardProvider);
     final selectedCustomerId = _selectedCustomerId;
     if (selectedCustomerId != null) {
       ref.invalidate(debtCustomerDetailsProvider(selectedCustomerId));
     }
+  }
+
+  void _syncAmountFromSelection() {
+    final product = _selectedProduct;
+    final quantity = int.tryParse(_quantity.text.trim()) ?? 0;
+    if (product == null || quantity <= 0) {
+      _amount.clear();
+      return;
+    }
+    _amount.text = (product.unitPrice * quantity).toStringAsFixed(2);
+  }
+
+  Product? _resolveSelectedProduct(List<Product> products) {
+    final selectedId = _selectedProduct?.id;
+    if (selectedId == null) return null;
+    for (final product in products) {
+      if (product.id == selectedId) return product;
+    }
+    return null;
   }
 
   Future<void> _saveCustomer() async {
@@ -150,8 +177,10 @@ class _DebtsScreenState extends ConsumerState<DebtsScreen> {
       await ref.read(debtRepoProvider).addDebtEntry(
         DebtEntry(
           customerId: _selectedCustomerId!,
-          itemName: _itemName.text.trim(),
+          productId: _selectedProduct!.id!,
+          itemName: _selectedProduct!.name,
           quantity: int.parse(_quantity.text.trim()),
+          unitPrice: _selectedProduct!.unitPrice,
           amountDue: double.parse(_amount.text.trim()),
           note: _entryNotes.text.trim(),
         ),
@@ -236,6 +265,12 @@ class _DebtsScreenState extends ConsumerState<DebtsScreen> {
     }
   }
 
+  String? _validateSelectedProduct(Product? value) {
+    if (value == null) return 'Select a product';
+    if (value.quantity <= 0) return 'Selected product is out of stock';
+    return null;
+  }
+
   String? _validatePhone(String? value) {
     final trimmed = value?.trim() ?? '';
     if (trimmed.isEmpty) return 'Required';
@@ -247,6 +282,7 @@ class _DebtsScreenState extends ConsumerState<DebtsScreen> {
   @override
   Widget build(BuildContext context) {
     final summariesAsync = ref.watch(debtCustomersProvider);
+    final productsAsync = ref.watch(productsProvider);
     final selectedCustomerId = _selectedCustomerId;
     final selectedDetailsAsync = selectedCustomerId == null
         ? null
@@ -361,10 +397,44 @@ class _DebtsScreenState extends ConsumerState<DebtsScreen> {
                           },
                         ),
                         const SizedBox(height: 12),
-                        AppTextField(
-                          controller: _itemName,
-                          label: 'Item Taken on Debt',
-                          validator: Validators.required,
+                        productsAsync.when(
+                          loading: () => const LinearProgressIndicator(),
+                          error: (e, _) => Text('Products unavailable: $e'),
+                          data: (products) {
+                            final availableProducts =
+                                products.where((product) => product.quantity > 0).toList();
+                            final selectedProduct = _resolveSelectedProduct(availableProducts);
+                            if (_selectedProduct != null && selectedProduct == null) {
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (mounted) {
+                                  setState(() => _selectedProduct = null);
+                                }
+                              });
+                            }
+                            return DropdownButtonFormField<Product>(
+                              value: selectedProduct,
+                              decoration: const InputDecoration(labelText: 'Select Product'),
+                              isExpanded: true,
+                              items: availableProducts
+                                  .map(
+                                    (product) => DropdownMenuItem<Product>(
+                                      value: product,
+                                      child: Text(
+                                        '${product.name} (${Fmt.qty(product.quantity)} in stock)',
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                              validator: _validateSelectedProduct,
+                              onChanged: availableProducts.isEmpty
+                                  ? null
+                                  : (product) {
+                                      setState(() => _selectedProduct = product);
+                                      _syncAmountFromSelection();
+                                    },
+                            );
+                          },
                         ),
                         const SizedBox(height: 12),
                         AppTextField(
@@ -373,6 +443,7 @@ class _DebtsScreenState extends ConsumerState<DebtsScreen> {
                           validator: Validators.nonZeroInt,
                           keyboardType: TextInputType.number,
                           inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                          onChanged: (_) => _syncAmountFromSelection(),
                         ),
                         const SizedBox(height: 12),
                         AppTextField(
@@ -388,6 +459,16 @@ class _DebtsScreenState extends ConsumerState<DebtsScreen> {
                           label: 'Entry Note',
                           maxLines: 2,
                         ),
+                        if (_selectedProduct != null) ...[
+                          const SizedBox(height: 12),
+                          Text(
+                            'Unit price: ${Fmt.currency(_selectedProduct!.unitPrice)} | Stock after debt: ${Fmt.qty((_selectedProduct!.quantity - (int.tryParse(_quantity.text.trim()) ?? 0)).clamp(0, _selectedProduct!.quantity))}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 20),
                         FilledButton.icon(
                           onPressed: _savingEntry ? null : _addDebtEntry,
@@ -761,9 +842,11 @@ class _DebtDetailsPanel extends StatelessWidget {
                             style: const TextStyle(fontWeight: FontWeight.w600),
                           ),
                           subtitle: Text(
-                            entry.note.isEmpty ? dateText : '${entry.note}\n$dateText',
+                            entry.note.isEmpty
+                                ? 'Unit: ${Fmt.currency(entry.unitPrice)}\n$dateText'
+                                : '${entry.note}\nUnit: ${Fmt.currency(entry.unitPrice)}\n$dateText',
                           ),
-                          isThreeLine: entry.note.isNotEmpty,
+                          isThreeLine: true,
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
