@@ -1,16 +1,22 @@
+import 'dart:io';
+
 import 'package:data_table_2/data_table_2.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+
 import '../../core/errors/app_exception.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/utils/validators.dart';
 import '../../core/widgets/app_text_field.dart';
-import '../../core/widgets/section_header.dart';
 import '../../core/widgets/empty_state.dart';
+import '../../core/widgets/section_header.dart';
 import '../../data/models/product.dart';
 import '../../data/repos/providers.dart';
 import 'product_provider.dart';
+import 'reorder_planner.dart';
 
 class ProductsScreen extends ConsumerStatefulWidget {
   const ProductsScreen({super.key});
@@ -123,6 +129,40 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
         backgroundColor: error ? Theme.of(context).colorScheme.error : null,
       ),
     );
+  }
+
+  Future<void> _exportReorderPlan(ReorderPlan plan) async {
+    try {
+      final appDir = await getApplicationSupportDirectory();
+      final exportDir = Directory(p.join(appDir.path, 'exports'))
+        ..createSync(recursive: true);
+      final file = File(
+        p.join(exportDir.path, 'reorder_plan_${Fmt.fileDate(DateTime.now())}.csv'),
+      );
+
+      final sb = StringBuffer()
+        ..writeln('Reorder Plan')
+        ..writeln('Generated At,${DateTime.now().toIso8601String()}')
+        ..writeln('Items,${plan.totalItems}')
+        ..writeln('Units,${plan.totalUnits}')
+        ..writeln('Estimated Cost,${plan.totalCost}')
+        ..writeln()
+        ..writeln('Product,Category,Current Qty,Minimum,Target Qty,Recommended Buy,Unit Price,Estimated Cost');
+
+      for (final suggestion in plan.suggestions) {
+        final product = suggestion.product;
+        sb.writeln(
+          '"${product.name.replaceAll('"', '""')}","${product.category.replaceAll('"', '""')}",${product.quantity},${product.minimumStock},${suggestion.targetStock},${suggestion.recommendedQuantity},${product.unitPrice},${suggestion.estimatedCost}',
+        );
+      }
+
+      await file.writeAsString(sb.toString());
+      if (!mounted) return;
+      _showSnack('Reorder plan exported to: ${file.path}');
+    } catch (e) {
+      if (!mounted) return;
+      _showSnack('Failed to export reorder plan: $e', error: true);
+    }
   }
 
   @override
@@ -282,6 +322,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                         () => const Center(child: CircularProgressIndicator()),
                     error: (e, _) => Center(child: Text('Error: $e')),
                     data: (products) {
+                      final reorderPlan = buildReorderPlan(products);
                       final filtered =
                           products
                               .where(
@@ -303,97 +344,110 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                           message: 'No products found',
                         );
                       }
-                      return DataTable2(
-                        columnSpacing: 16,
-                        horizontalMargin: 12,
-                        columns: const [
-                          DataColumn2(label: Text('Name'), size: ColumnSize.L),
-                          DataColumn2(label: Text('Category')),
-                          DataColumn2(label: Text('Price'), numeric: true),
-                          DataColumn2(label: Text('Qty'), numeric: true),
-                          DataColumn2(label: Text('Min'), numeric: true),
-                          DataColumn2(label: Text('Value'), numeric: true),
-                          DataColumn2(
-                            label: Text('Status'),
-                            size: ColumnSize.S,
-                          ),
-                          DataColumn2(label: Text(''), size: ColumnSize.S),
-                        ],
-                        rows:
-                            filtered
-                                .map(
-                                  (p) => DataRow2(
-                                    cells: [
-                                      DataCell(
-                                        Text(
-                                          p.name,
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      ),
-                                      DataCell(Text(p.category)),
-                                      DataCell(Text(Fmt.currency(p.unitPrice))),
-                                      DataCell(Text(Fmt.qty(p.quantity))),
-                                      DataCell(Text(p.minimumStock.toString())),
-                                      DataCell(Text(Fmt.currency(p.totalValue))),
-                                      DataCell(
-                                        p.isLowStock
-                                            ? Chip(
-                                              label: Text(
-                                                'Low',
-                                                style: TextStyle(
-                                                  color: cs.onError,
-                                                  fontSize: 11,
+                      return Column(
+                        children: [
+                          if (!reorderPlan.isEmpty) ...[
+                            _ReorderPlannerCard(
+                              plan: reorderPlan,
+                              onExport: () => _exportReorderPlan(reorderPlan),
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                          Expanded(
+                            child: DataTable2(
+                              columnSpacing: 16,
+                              horizontalMargin: 12,
+                              columns: const [
+                                DataColumn2(label: Text('Name'), size: ColumnSize.L),
+                                DataColumn2(label: Text('Category')),
+                                DataColumn2(label: Text('Price'), numeric: true),
+                                DataColumn2(label: Text('Qty'), numeric: true),
+                                DataColumn2(label: Text('Min'), numeric: true),
+                                DataColumn2(label: Text('Value'), numeric: true),
+                                DataColumn2(
+                                  label: Text('Status'),
+                                  size: ColumnSize.S,
+                                ),
+                                DataColumn2(label: Text(''), size: ColumnSize.S),
+                              ],
+                              rows:
+                                  filtered
+                                      .map(
+                                        (p) => DataRow2(
+                                          cells: [
+                                            DataCell(
+                                              Text(
+                                                p.name,
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w500,
                                                 ),
                                               ),
-                                              backgroundColor: cs.error,
-                                              padding: EdgeInsets.zero,
-                                              visualDensity:
-                                                  VisualDensity.compact,
-                                            )
-                                            : Chip(
-                                              label: Text(
-                                                'OK',
-                                                style: TextStyle(
-                                                  color: cs.onPrimary,
-                                                  fontSize: 11,
-                                                ),
-                                              ),
-                                              backgroundColor: cs.primary,
-                                              padding: EdgeInsets.zero,
-                                              visualDensity:
-                                                  VisualDensity.compact,
                                             ),
-                                      ),
-                                      DataCell(
-                                        Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            IconButton(
-                                              icon: const Icon(
-                                                Icons.edit_outlined,
-                                                size: 18,
-                                              ),
-                                              onPressed: () => _loadForEdit(p),
-                                              tooltip: 'Edit',
+                                            DataCell(Text(p.category)),
+                                            DataCell(Text(Fmt.currency(p.unitPrice))),
+                                            DataCell(Text(Fmt.qty(p.quantity))),
+                                            DataCell(Text(p.minimumStock.toString())),
+                                            DataCell(Text(Fmt.currency(p.totalValue))),
+                                            DataCell(
+                                              p.isLowStock
+                                                  ? Chip(
+                                                    label: Text(
+                                                      'Low',
+                                                      style: TextStyle(
+                                                        color: cs.onError,
+                                                        fontSize: 11,
+                                                      ),
+                                                    ),
+                                                    backgroundColor: cs.error,
+                                                    padding: EdgeInsets.zero,
+                                                    visualDensity:
+                                                        VisualDensity.compact,
+                                                  )
+                                                  : Chip(
+                                                    label: Text(
+                                                      'OK',
+                                                      style: TextStyle(
+                                                        color: cs.onPrimary,
+                                                        fontSize: 11,
+                                                      ),
+                                                    ),
+                                                    backgroundColor: cs.primary,
+                                                    padding: EdgeInsets.zero,
+                                                    visualDensity:
+                                                        VisualDensity.compact,
+                                                  ),
                                             ),
-                                            IconButton(
-                                              icon: Icon(
-                                                Icons.delete_outline,
-                                                size: 18,
-                                                color: cs.error,
+                                            DataCell(
+                                              Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  IconButton(
+                                                    icon: const Icon(
+                                                      Icons.edit_outlined,
+                                                      size: 18,
+                                                    ),
+                                                    onPressed: () => _loadForEdit(p),
+                                                    tooltip: 'Edit',
+                                                  ),
+                                                  IconButton(
+                                                    icon: Icon(
+                                                      Icons.delete_outline,
+                                                      size: 18,
+                                                      color: cs.error,
+                                                    ),
+                                                    onPressed: () => _delete(p),
+                                                    tooltip: 'Delete',
+                                                  ),
+                                                ],
                                               ),
-                                              onPressed: () => _delete(p),
-                                              tooltip: 'Delete',
                                             ),
                                           ],
                                         ),
-                                      ),
-                                    ],
-                                  ),
-                                )
-                                .toList(),
+                                      )
+                                      .toList(),
+                            ),
+                          ),
+                        ],
                       );
                     },
                   ),
@@ -403,6 +457,154 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _ReorderPlannerCard extends StatelessWidget {
+  const _ReorderPlannerCard({
+    required this.plan,
+    required this.onExport,
+  });
+
+  final ReorderPlan plan;
+  final VoidCallback onExport;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            SectionHeader(
+              title: 'Reorder Planner',
+              action: FilledButton.icon(
+                onPressed: onExport,
+                icon: const Icon(Icons.download, size: 18),
+                label: const Text('Export CSV'),
+              ),
+            ),
+            Row(
+              children: [
+                Expanded(
+                  child: _PlannerMetric(
+                    label: 'Urgent Items',
+                    value: plan.totalItems.toString(),
+                    icon: Icons.warning_amber_rounded,
+                    color: cs.error,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _PlannerMetric(
+                    label: 'Units to Buy',
+                    value: Fmt.qty(plan.totalUnits),
+                    icon: Icons.shopping_cart_checkout_rounded,
+                    color: cs.primary,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _PlannerMetric(
+                    label: 'Estimated Spend',
+                    value: Fmt.currency(plan.totalCost),
+                    icon: Icons.payments_outlined,
+                    color: const Color(0xFF0F766E),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            ...plan.suggestions.take(5).map(
+              (suggestion) => ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: CircleAvatar(
+                  backgroundColor: cs.errorContainer,
+                  foregroundColor: cs.onErrorContainer,
+                  child: Text(
+                    suggestion.recommendedQuantity.toString(),
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                title: Text(
+                  suggestion.product.name,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                subtitle: Text(
+                  '${suggestion.product.category} - ${suggestion.product.quantity} in stock - target ${suggestion.targetStock}',
+                ),
+                trailing: Text(
+                  Fmt.currency(suggestion.estimatedCost),
+                  style: TextStyle(
+                    color: cs.primary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+            if (plan.totalItems > 5)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '+${plan.totalItems - 5} more items need restocking',
+                  style: TextStyle(
+                    color: cs.onSurfaceVariant,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PlannerMetric extends StatelessWidget {
+  const _PlannerMetric({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+  });
+
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  value,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(label),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
