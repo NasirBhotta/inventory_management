@@ -31,14 +31,16 @@ class SaleItem extends Equatable {
     required this.productName,
     required this.quantity,
     required this.unitPrice,
+    this.stockUnit = 'unit',
   });
 
   final int? id;
   final int saleId;
   final int productId;
   final String productName;
-  final int quantity;
+  final double quantity;
   final double unitPrice;
+  final String stockUnit;
   double get lineTotal => quantity * unitPrice;
 
   factory SaleItem.fromMap(Map<String, Object?> m) => SaleItem(
@@ -46,12 +48,15 @@ class SaleItem extends Equatable {
     saleId: m['sale_id'] as int,
     productId: m['product_id'] as int,
     productName: m['name'] as String? ?? '',
-    quantity: m['quantity'] as int,
+    quantity: (m['quantity'] as num).toDouble(),
     unitPrice: (m['unit_price'] as num).toDouble(),
+    stockUnit: (m['stock_unit'] as String? ?? 'unit').trim().isEmpty
+        ? 'unit'
+        : (m['stock_unit'] as String? ?? 'unit').trim(),
   );
 
   @override
-  List<Object?> get props => [id, saleId, productId, quantity, unitPrice];
+  List<Object?> get props => [id, saleId, productId, quantity, unitPrice, stockUnit];
 }
 
 class CartItem extends Equatable {
@@ -60,30 +65,47 @@ class CartItem extends Equatable {
     required this.productName,
     required this.quantity,
     required this.unitPrice,
+    this.stockUnit = 'unit',
+    this.allowFractionalQuantity = false,
   });
 
   final int productId;
   final String productName;
-  final int quantity;
+  final double quantity;
   final double unitPrice;
+  final String stockUnit;
+  final bool allowFractionalQuantity;
 
   double get lineTotal => quantity * unitPrice;
   double get total => lineTotal;
+  double get quantityStep => allowFractionalQuantity ? 0.25 : 1.0;
 
   CartItem copyWith({
     int? productId,
     String? productName,
-    int? quantity,
+    double? quantity,
     double? unitPrice,
+    String? stockUnit,
+    bool? allowFractionalQuantity,
   }) {
     return CartItem(
       productId: productId ?? this.productId,
       productName: productName ?? this.productName,
       quantity: quantity ?? this.quantity,
       unitPrice: unitPrice ?? this.unitPrice,
+      stockUnit: stockUnit ?? this.stockUnit,
+      allowFractionalQuantity:
+          allowFractionalQuantity ?? this.allowFractionalQuantity,
     );
   }
 
   @override
-  List<Object?> get props => [productId, productName, quantity, unitPrice];
+  List<Object?> get props => [
+    productId,
+    productName,
+    quantity,
+    unitPrice,
+    stockUnit,
+    allowFractionalQuantity,
+  ];
 }

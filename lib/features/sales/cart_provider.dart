@@ -25,7 +25,9 @@ class CartNotifier extends StateNotifier<List<CartItem>> {
     if (index == -1) return;
     final updated = [...state];
     final existing = updated[index];
-    updated[index] = existing.copyWith(quantity: existing.quantity + 1);
+    updated[index] = existing.copyWith(
+      quantity: existing.quantity + existing.quantityStep,
+    );
     state = updated;
   }
 
@@ -34,10 +36,12 @@ class CartNotifier extends StateNotifier<List<CartItem>> {
     if (index == -1) return;
     final updated = [...state];
     final existing = updated[index];
-    if (existing.quantity <= 1) {
+    if (existing.quantity <= existing.quantityStep) {
       updated.removeAt(index);
     } else {
-      updated[index] = existing.copyWith(quantity: existing.quantity - 1);
+      updated[index] = existing.copyWith(
+        quantity: existing.quantity - existing.quantityStep,
+      );
     }
     state = updated;
   }

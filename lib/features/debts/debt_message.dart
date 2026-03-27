@@ -23,7 +23,7 @@ String buildDebtReminderMessage(DebtCustomerDetails details) {
   if (unpaidEntries.isNotEmpty) {
     lines.add('Pending items:');
     for (final entry in unpaidEntries.take(5)) {
-      lines.add('- ${entry.itemName} x${entry.quantity} - ${Fmt.currency(entry.amountDue)}');
+      lines.add('- ${entry.itemName} x${Fmt.qtyWithUnit(entry.quantity, entry.stockUnit)} - ${Fmt.currency(entry.amountDue)}');
     }
     if (unpaidEntries.length > 5) {
       lines.add('- and ${unpaidEntries.length - 5} more item(s)');

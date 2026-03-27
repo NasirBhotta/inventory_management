@@ -159,7 +159,14 @@ class DebtRepository {
       }
 
       final product = rows.first;
-      final currentQuantity = product['quantity'] as int? ?? 0;
+      final allowsFractional =
+          ((product['allow_fractional_quantity'] as num?)?.toInt() ?? 0) == 1;
+      if (!allowsFractional && entry.quantity != entry.quantity.roundToDouble()) {
+        throw const ValidationException(
+          'This product can only be borrowed in whole quantities',
+        );
+      }
+      final currentQuantity = (product['quantity'] as num?)?.toDouble() ?? 0;
       if (currentQuantity < entry.quantity) {
         throw InsufficientStockException(product['name'] as String? ?? 'Product');
       }
@@ -169,6 +176,7 @@ class DebtRepository {
         ...entry.toMap(),
         'item_name': product['name'],
         'unit_price': (product['unit_price'] as num?)?.toDouble() ?? entry.unitPrice,
+        'stock_unit': product['stock_unit'] as String? ?? entry.stockUnit,
         'entry_date': timestamp,
       });
 
@@ -186,6 +194,7 @@ class DebtRepository {
         'product_id': entry.productId,
         'movement_type': 'OUT',
         'quantity': entry.quantity,
+        'stock_unit': product['stock_unit'] as String? ?? entry.stockUnit,
         'note': 'Debt for customer #${entry.customerId}',
         'movement_date': timestamp,
       });
@@ -223,7 +232,8 @@ class DebtRepository {
 
       final timestamp = DateTime.now().toIso8601String();
       if (productRows.isNotEmpty) {
-        final currentQuantity = productRows.first['quantity'] as int? ?? 0;
+        final currentQuantity =
+            (productRows.first['quantity'] as num?)?.toDouble() ?? 0;
         await txn.update(
           TableNames.products,
           {
@@ -237,6 +247,7 @@ class DebtRepository {
           'product_id': entry.productId,
           'movement_type': 'IN',
           'quantity': entry.quantity,
+          'stock_unit': productRows.first['stock_unit'] as String? ?? entry.stockUnit,
           'note': 'Debt entry removed #$entryId',
           'movement_date': timestamp,
         });

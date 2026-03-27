@@ -2,7 +2,7 @@ abstract class AppConstants {
   static const String appName = 'FertiTrack';
   static const String appVersion = '1.0.0';
   static const String dbName = 'inventory.db';
-  static const int dbVersion = 1;
+  static const int dbVersion = 2;
   static const String backupFolder = 'backups';
   static const String currency = 'PKR';
 }

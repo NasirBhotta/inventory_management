@@ -58,8 +58,10 @@ class DatabaseService {
         name           TEXT    NOT NULL,
         category       TEXT    NOT NULL,
         unit_price     REAL    NOT NULL DEFAULT 0,
-        quantity       INTEGER NOT NULL DEFAULT 0,
-        minimum_stock  INTEGER NOT NULL DEFAULT 0,
+        quantity       REAL    NOT NULL DEFAULT 0,
+        minimum_stock  REAL    NOT NULL DEFAULT 0,
+        stock_unit     TEXT    NOT NULL DEFAULT 'unit',
+        allow_fractional_quantity INTEGER NOT NULL DEFAULT 0,
         created_at     TEXT    NOT NULL DEFAULT (datetime('now')),
         updated_at     TEXT    NOT NULL DEFAULT (datetime('now'))
       )
@@ -79,8 +81,9 @@ class DatabaseService {
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
         sale_id     INTEGER NOT NULL REFERENCES sales(id),
         product_id  INTEGER NOT NULL REFERENCES products(id),
-        quantity    INTEGER NOT NULL,
-        unit_price  REAL    NOT NULL
+        quantity    REAL    NOT NULL,
+        unit_price  REAL    NOT NULL,
+        stock_unit  TEXT    NOT NULL DEFAULT 'unit'
       )
     ''');
 
@@ -89,7 +92,8 @@ class DatabaseService {
         id             INTEGER PRIMARY KEY AUTOINCREMENT,
         product_id     INTEGER NOT NULL REFERENCES products(id),
         movement_type  TEXT    NOT NULL CHECK(movement_type IN ('IN','OUT')),
-        quantity       INTEGER NOT NULL,
+        quantity       REAL    NOT NULL,
+        stock_unit     TEXT    NOT NULL DEFAULT 'unit',
         note           TEXT,
         movement_date  TEXT    NOT NULL DEFAULT (datetime('now'))
       )
@@ -113,9 +117,10 @@ class DatabaseService {
         customer_id INTEGER NOT NULL REFERENCES debt_customers(id) ON DELETE CASCADE,
         product_id  INTEGER NOT NULL REFERENCES products(id),
         item_name   TEXT    NOT NULL,
-        quantity    INTEGER NOT NULL DEFAULT 1,
+        quantity    REAL    NOT NULL DEFAULT 1,
         unit_price  REAL    NOT NULL DEFAULT 0,
         amount_due  REAL    NOT NULL DEFAULT 0,
+        stock_unit  TEXT    NOT NULL DEFAULT 'unit',
         note        TEXT    NOT NULL DEFAULT '',
         entry_date  TEXT    NOT NULL DEFAULT (datetime('now')),
         is_paid     INTEGER NOT NULL DEFAULT 0
@@ -147,6 +152,18 @@ class DatabaseService {
       db,
       table: 'products',
       column: 'minimum_stock',
+      definition: 'REAL NOT NULL DEFAULT 0',
+    );
+    await _ensureColumn(
+      db,
+      table: 'products',
+      column: 'stock_unit',
+      definition: 'TEXT NOT NULL DEFAULT \'unit\'',
+    );
+    await _ensureColumn(
+      db,
+      table: 'products',
+      column: 'allow_fractional_quantity',
       definition: 'INTEGER NOT NULL DEFAULT 0',
     );
     await _ensureColumn(
@@ -178,6 +195,12 @@ class DatabaseService {
       table: 'stock_movements',
       column: 'note',
       definition: 'TEXT',
+    );
+    await _ensureColumn(
+      db,
+      table: 'stock_movements',
+      column: 'stock_unit',
+      definition: 'TEXT NOT NULL DEFAULT \'unit\'',
     );
     await _ensureColumn(
       db,
@@ -213,13 +236,19 @@ class DatabaseService {
       db,
       table: 'sale_items',
       column: 'quantity',
-      definition: 'INTEGER NOT NULL DEFAULT 0',
+      definition: 'REAL NOT NULL DEFAULT 0',
     );
     await _ensureColumn(
       db,
       table: 'sale_items',
       column: 'unit_price',
       definition: 'REAL NOT NULL DEFAULT 0',
+    );
+    await _ensureColumn(
+      db,
+      table: 'sale_items',
+      column: 'stock_unit',
+      definition: 'TEXT NOT NULL DEFAULT \'unit\'',
     );
     await _ensureColumn(
       db,
@@ -260,6 +289,12 @@ class DatabaseService {
     await _ensureColumn(
       db,
       table: 'debt_entries',
+      column: 'stock_unit',
+      definition: 'TEXT NOT NULL DEFAULT \'unit\'',
+    );
+    await _ensureColumn(
+      db,
+      table: 'debt_entries',
       column: 'note',
       definition: 'TEXT NOT NULL DEFAULT \'\'',
     );
@@ -292,7 +327,7 @@ class DatabaseService {
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     appLogger.i('Upgrading database from $oldVersion to $newVersion');
-    // Add migration scripts here as app evolves
+    await _ensureSchema(db);
   }
 
   Future<void> close() async {

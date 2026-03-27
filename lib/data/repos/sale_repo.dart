@@ -35,7 +35,16 @@ class SalesRepository {
             throw DatabaseException('Product not found: ${item.productName}');
           }
 
-          final current = rows.first['quantity'] as int;
+          final allowsFractional =
+              ((rows.first['allow_fractional_quantity'] as num?)?.toInt() ?? 0) ==
+              1;
+          if (!allowsFractional && item.quantity != item.quantity.roundToDouble()) {
+            throw const ValidationException(
+              'This product can only be sold in whole quantities',
+            );
+          }
+
+          final current = (rows.first['quantity'] as num).toDouble();
           if (current < item.quantity) {
             throw InsufficientStockException(item.productName);
           }
@@ -54,6 +63,7 @@ class SalesRepository {
             'product_id': item.productId,
             'movement_type': 'OUT',
             'quantity': item.quantity,
+            'stock_unit': item.stockUnit,
             'note': 'Sale #$saleId',
             'movement_date': DateTime.now().toIso8601String(),
           });
@@ -63,6 +73,7 @@ class SalesRepository {
             'product_id': item.productId,
             'quantity': item.quantity,
             'unit_price': item.unitPrice,
+            'stock_unit': item.stockUnit,
           });
         }
 

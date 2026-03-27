@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../core/errors/app_exception.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/utils/validators.dart';
 import '../../core/widgets/app_text_field.dart';
-import '../../core/widgets/section_header.dart';
 import '../../core/widgets/empty_state.dart';
+import '../../core/widgets/section_header.dart';
 import '../../data/models/product.dart';
 import '../../data/models/stock_movement.dart';
 import '../../data/repos/providers.dart';
@@ -15,6 +16,7 @@ import 'stock_provider.dart';
 
 class StockScreen extends ConsumerStatefulWidget {
   const StockScreen({super.key});
+
   @override
   ConsumerState<StockScreen> createState() => _StockScreenState();
 }
@@ -37,6 +39,24 @@ class _StockScreenState extends ConsumerState<StockScreen> {
     return null;
   }
 
+  String? _validateQuantity(String? value) {
+    final product = _selected;
+    final baseError = Validators.nonZeroDouble(value);
+    if (baseError != null) return baseError;
+    if (product == null) return 'Select a product first';
+    final ruleError = Validators.wholeNumberWhenRequired(
+      value,
+      allowFraction: product.allowFractionalQuantity,
+      message: 'This product only allows whole-number stock changes',
+    );
+    if (ruleError != null) return ruleError;
+    final quantity = double.tryParse(value?.trim() ?? '') ?? 0;
+    if (_type == MovementType.out && quantity > product.quantity) {
+      return 'Only ${Fmt.qtyWithUnit(product.quantity, product.stockUnit)} available';
+    }
+    return null;
+  }
+
   @override
   void dispose() {
     _qty.dispose();
@@ -51,12 +71,10 @@ class _StockScreenState extends ConsumerState<StockScreen> {
       return;
     }
     try {
-      await ref
-          .read(stockRepoProvider)
-          .move(
+      await ref.read(stockRepoProvider).move(
             productId: _selected!.id!,
             type: _type,
-            quantity: int.parse(_qty.text.trim()),
+            quantity: double.parse(_qty.text.trim()),
             note: _note.text,
           );
       _qty.clear();
@@ -86,9 +104,8 @@ class _StockScreenState extends ConsumerState<StockScreen> {
 
     return Row(
       children: [
-        // ── Form ──────────────────────────────────────────────────────────
         SizedBox(
-          width: 300,
+          width: 320,
           child: Card(
             margin: const EdgeInsets.all(16),
             child: Padding(
@@ -101,8 +118,8 @@ class _StockScreenState extends ConsumerState<StockScreen> {
                     Text(
                       'Stock Movement',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
+                            fontWeight: FontWeight.w700,
+                          ),
                     ),
                     const SizedBox(height: 16),
                     productsAsync.when(
@@ -116,28 +133,40 @@ class _StockScreenState extends ConsumerState<StockScreen> {
                           });
                         }
                         return DropdownButtonFormField<Product>(
-                            value: selected,
-                            decoration: const InputDecoration(
-                              labelText: 'Select Product',
-                            ),
-                            isExpanded: true,
-                            items:
-                                products
-                                    .map(
-                                      (p) => DropdownMenuItem(
-                                        value: p,
-                                        child: Text(
-                                          '${p.name} (Qty: ${p.quantity})',
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    )
-                                    .toList(),
-                            onChanged: (v) => setState(() => _selected = v),
-                            validator: (v) => v == null ? 'Required' : null,
-                          );
+                          value: selected,
+                          decoration: const InputDecoration(
+                            labelText: 'Select Product',
+                          ),
+                          isExpanded: true,
+                          items: products
+                              .map(
+                                (p) => DropdownMenuItem(
+                                  value: p,
+                                  child: Text(
+                                    '${p.name} (${Fmt.qtyWithUnit(p.quantity, p.stockUnit)})',
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (v) {
+                            setState(() => _selected = v);
+                            _formKey.currentState?.validate();
+                          },
+                          validator: (v) => v == null ? 'Required' : null,
+                        );
                       },
                     ),
+                    if (_selected != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'Current stock: ${Fmt.qtyWithUnit(_selected!.quantity, _selected!.stockUnit)} • ${_selected!.allowFractionalQuantity ? 'Partial changes allowed' : 'Whole quantity only'}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 12),
                     SegmentedButton<MovementType>(
                       segments: const [
@@ -153,16 +182,24 @@ class _StockScreenState extends ConsumerState<StockScreen> {
                         ),
                       ],
                       selected: {_type},
-                      onSelectionChanged:
-                          (s) => setState(() => _type = s.first),
+                      onSelectionChanged: (s) {
+                        setState(() => _type = s.first);
+                        _formKey.currentState?.validate();
+                      },
                     ),
                     const SizedBox(height: 12),
                     AppTextField(
                       controller: _qty,
-                      label: 'Quantity',
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      validator: Validators.nonZeroInt,
+                      label: _selected == null
+                          ? 'Quantity'
+                          : 'Quantity (${_selected!.stockUnit})',
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+                      ],
+                      validator: _validateQuantity,
                     ),
                     const SizedBox(height: 12),
                     AppTextField(
@@ -193,7 +230,6 @@ class _StockScreenState extends ConsumerState<StockScreen> {
             ),
           ),
         ),
-        // ── Movement Log ──────────────────────────────────────────────────
         Expanded(
           child: Padding(
             padding: const EdgeInsets.all(16),
@@ -204,10 +240,7 @@ class _StockScreenState extends ConsumerState<StockScreen> {
                   children: [
                     SegmentedButton<MovementType?>(
                       segments: const [
-                        ButtonSegment<MovementType?>(
-                          value: null,
-                          label: Text('All'),
-                        ),
+                        ButtonSegment<MovementType?>(value: null, label: Text('All')),
                         ButtonSegment<MovementType?>(
                           value: MovementType.in_,
                           label: Text('IN'),
@@ -218,8 +251,7 @@ class _StockScreenState extends ConsumerState<StockScreen> {
                         ),
                       ],
                       selected: {_historyType},
-                      onSelectionChanged:
-                          (s) => setState(() => _historyType = s.first),
+                      onSelectionChanged: (s) => setState(() => _historyType = s.first),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -229,9 +261,7 @@ class _StockScreenState extends ConsumerState<StockScreen> {
                           hintText: 'Search by product or note...',
                           prefixIcon: Icon(Icons.search, size: 18),
                         ),
-                        onChanged:
-                            (v) =>
-                                setState(() => _historySearch = v.toLowerCase()),
+                        onChanged: (v) => setState(() => _historySearch = v.toLowerCase()),
                       ),
                     ),
                   ],
@@ -239,27 +269,16 @@ class _StockScreenState extends ConsumerState<StockScreen> {
                 const SizedBox(height: 12),
                 Expanded(
                   child: movementsAsync.when(
-                    loading:
-                        () => const Center(child: CircularProgressIndicator()),
+                    loading: () => const Center(child: CircularProgressIndicator()),
                     error: (e, _) => Center(child: Text('$e')),
                     data: (movements) {
-                      final filtered =
-                          movements
-                              .where(
-                                (m) =>
-                                    _historyType == null ||
-                                    m.type == _historyType,
-                              )
-                              .where((m) {
-                                if (_historySearch.isEmpty) return true;
-                                return m.productName.toLowerCase().contains(
-                                      _historySearch,
-                                    ) ||
-                                    m.note.toLowerCase().contains(
-                                      _historySearch,
-                                    );
-                              })
-                              .toList();
+                      final filtered = movements
+                          .where((m) => _historyType == null || m.type == _historyType)
+                          .where((m) {
+                        if (_historySearch.isEmpty) return true;
+                        return m.productName.toLowerCase().contains(_historySearch) ||
+                            m.note.toLowerCase().contains(_historySearch);
+                      }).toList();
                       if (filtered.isEmpty) {
                         return const EmptyState(
                           icon: Icons.swap_horiz,
@@ -274,21 +293,17 @@ class _StockScreenState extends ConsumerState<StockScreen> {
                           final isIn = m.type == MovementType.in_;
                           return ListTile(
                             leading: CircleAvatar(
-                              backgroundColor: (isIn ? Colors.green : cs.error)
-                                  .withValues(alpha: 0.1),
+                              backgroundColor:
+                                  (isIn ? Colors.green : cs.error).withValues(alpha: 0.1),
                               child: Icon(
-                                isIn
-                                    ? Icons.arrow_downward
-                                    : Icons.arrow_upward,
+                                isIn ? Icons.arrow_downward : Icons.arrow_upward,
                                 color: isIn ? Colors.green : cs.error,
                                 size: 20,
                               ),
                             ),
                             title: Text(
                               m.productName,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w500,
-                              ),
+                              style: const TextStyle(fontWeight: FontWeight.w500),
                             ),
                             subtitle: Text(
                               m.note.isEmpty
@@ -296,7 +311,7 @@ class _StockScreenState extends ConsumerState<StockScreen> {
                                   : '${m.note} • ${Fmt.dateTime(m.movementDate)}',
                             ),
                             trailing: Text(
-                              '${isIn ? '+' : '-'}${m.quantity}',
+                              '${isIn ? '+' : '-'}${Fmt.qtyWithUnit(m.quantity, m.stockUnit)}',
                               style: TextStyle(
                                 color: isIn ? Colors.green : cs.error,
                                 fontWeight: FontWeight.w700,

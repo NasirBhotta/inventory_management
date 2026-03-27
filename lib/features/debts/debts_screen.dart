@@ -116,7 +116,7 @@ class _DebtsScreenState extends ConsumerState<DebtsScreen> {
 
   void _syncAmountFromSelection() {
     final product = _selectedProduct;
-    final quantity = int.tryParse(_quantity.text.trim()) ?? 0;
+    final quantity = double.tryParse(_quantity.text.trim()) ?? 0;
     if (product == null || quantity <= 0) {
       _amount.clear();
       return;
@@ -179,7 +179,8 @@ class _DebtsScreenState extends ConsumerState<DebtsScreen> {
           customerId: _selectedCustomerId!,
           productId: _selectedProduct!.id!,
           itemName: _selectedProduct!.name,
-          quantity: int.parse(_quantity.text.trim()),
+          quantity: double.parse(_quantity.text.trim()),
+          stockUnit: _selectedProduct!.stockUnit,
           unitPrice: _selectedProduct!.unitPrice,
           amountDue: double.parse(_amount.text.trim()),
           note: _entryNotes.text.trim(),
@@ -268,6 +269,24 @@ class _DebtsScreenState extends ConsumerState<DebtsScreen> {
   String? _validateSelectedProduct(Product? value) {
     if (value == null) return 'Select a product';
     if (value.quantity <= 0) return 'Selected product is out of stock';
+    return null;
+  }
+
+  String? _validateEntryQuantity(String? value) {
+    final product = _selectedProduct;
+    final baseError = Validators.nonZeroDouble(value);
+    if (baseError != null) return baseError;
+    if (product == null) return 'Select a product first';
+    final ruleError = Validators.wholeNumberWhenRequired(
+      value,
+      allowFraction: product.allowFractionalQuantity,
+      message: 'This product can only be borrowed in whole quantities',
+    );
+    if (ruleError != null) return ruleError;
+    final quantity = double.tryParse(value?.trim() ?? '') ?? 0;
+    if (quantity > product.quantity) {
+      return 'Only ${Fmt.qtyWithUnit(product.quantity, product.stockUnit)} available';
+    }
     return null;
   }
 
@@ -420,7 +439,7 @@ class _DebtsScreenState extends ConsumerState<DebtsScreen> {
                                     (product) => DropdownMenuItem<Product>(
                                       value: product,
                                       child: Text(
-                                        '${product.name} (${Fmt.qty(product.quantity)} in stock)',
+                                        '${product.name} (${Fmt.qtyWithUnit(product.quantity, product.stockUnit)} in stock)',
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                     ),
@@ -431,6 +450,7 @@ class _DebtsScreenState extends ConsumerState<DebtsScreen> {
                                   ? null
                                   : (product) {
                                       setState(() => _selectedProduct = product);
+                                      _entryFormKey.currentState?.validate();
                                       _syncAmountFromSelection();
                                     },
                             );
@@ -439,10 +459,10 @@ class _DebtsScreenState extends ConsumerState<DebtsScreen> {
                         const SizedBox(height: 12),
                         AppTextField(
                           controller: _quantity,
-                          label: 'Quantity',
-                          validator: Validators.nonZeroInt,
-                          keyboardType: TextInputType.number,
-                          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                          label: _selectedProduct == null ? 'Quantity' : 'Quantity (${_selectedProduct!.stockUnit})',
+                          validator: _validateEntryQuantity,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
                           onChanged: (_) => _syncAmountFromSelection(),
                         ),
                         const SizedBox(height: 12),
@@ -462,7 +482,7 @@ class _DebtsScreenState extends ConsumerState<DebtsScreen> {
                         if (_selectedProduct != null) ...[
                           const SizedBox(height: 12),
                           Text(
-                            'Unit price: ${Fmt.currency(_selectedProduct!.unitPrice)} | Stock after debt: ${Fmt.qty((_selectedProduct!.quantity - (int.tryParse(_quantity.text.trim()) ?? 0)).clamp(0, _selectedProduct!.quantity))}',
+                            'Unit price: ${Fmt.currency(_selectedProduct!.unitPrice)} per ${_selectedProduct!.stockUnit} | Stock after debt: ${Fmt.qtyWithUnit((_selectedProduct!.quantity - (double.tryParse(_quantity.text.trim()) ?? 0)).clamp(0, _selectedProduct!.quantity), _selectedProduct!.stockUnit)}',
                             style: TextStyle(
                               fontSize: 12,
                               color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -838,13 +858,13 @@ class _DebtDetailsPanel extends StatelessWidget {
                             },
                           ),
                           title: Text(
-                            '${entry.itemName} x${entry.quantity}',
+                            '${entry.itemName} x${Fmt.qtyWithUnit(entry.quantity, entry.stockUnit)}',
                             style: const TextStyle(fontWeight: FontWeight.w600),
                           ),
                           subtitle: Text(
                             entry.note.isEmpty
-                                ? 'Unit: ${Fmt.currency(entry.unitPrice)}\n$dateText'
-                                : '${entry.note}\nUnit: ${Fmt.currency(entry.unitPrice)}\n$dateText',
+                                ? 'Unit: ${Fmt.currency(entry.unitPrice)} per ${entry.stockUnit}\n$dateText'
+                                : '${entry.note}\nUnit: ${Fmt.currency(entry.unitPrice)} per ${entry.stockUnit}\n$dateText',
                           ),
                           isThreeLine: true,
                           trailing: Row(

@@ -8,11 +8,12 @@ class ReorderSuggestion {
   });
 
   final Product product;
-  final int recommendedQuantity;
-  final int targetStock;
+  final double recommendedQuantity;
+  final double targetStock;
 
   double get estimatedCost => recommendedQuantity * product.unitPrice;
-  int get shortage => (product.minimumStock - product.quantity).clamp(0, product.minimumStock);
+  double get shortage =>
+      (product.minimumStock - product.quantity).clamp(0, product.minimumStock);
 }
 
 class ReorderPlan {
@@ -21,7 +22,8 @@ class ReorderPlan {
   final List<ReorderSuggestion> suggestions;
 
   int get totalItems => suggestions.length;
-  int get totalUnits => suggestions.fold(0, (sum, item) => sum + item.recommendedQuantity);
+  double get totalUnits =>
+      suggestions.fold(0, (sum, item) => sum + item.recommendedQuantity);
   double get totalCost => suggestions.fold(0, (sum, item) => sum + item.estimatedCost);
   bool get isEmpty => suggestions.isEmpty;
 }
@@ -31,7 +33,8 @@ ReorderPlan buildReorderPlan(List<Product> products) {
       .where((product) => product.isLowStock)
       .map((product) {
         final targetStock = _buildTargetStock(product);
-        final recommendedQuantity = (targetStock - product.quantity).clamp(0, targetStock);
+        final recommendedQuantity =
+            (targetStock - product.quantity).clamp(0, targetStock);
         return ReorderSuggestion(
           product: product,
           recommendedQuantity: recommendedQuantity,
@@ -49,8 +52,8 @@ ReorderPlan buildReorderPlan(List<Product> products) {
   return ReorderPlan(suggestions);
 }
 
-int _buildTargetStock(Product product) {
-  final bufferedMinimum = product.minimumStock + (product.minimumStock / 2).ceil();
+double _buildTargetStock(Product product) {
+  final bufferedMinimum = product.minimumStock + (product.minimumStock / 2);
   final safetyFloor = product.minimumStock + 5;
   return [bufferedMinimum, safetyFloor].reduce((a, b) => a > b ? a : b);
 }

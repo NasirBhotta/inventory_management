@@ -4,13 +4,25 @@ import '../constants/app_constants.dart';
 abstract class Fmt {
   static final _currency = NumberFormat('#,##0.00', 'en_US');
   static final _int = NumberFormat('#,##0', 'en_US');
+  static final _decimal = NumberFormat('#,##0.###', 'en_US');
   static final _date = DateFormat('dd MMM yyyy');
   static final _dateTime = DateFormat('dd MMM yyyy, hh:mm a');
   static final _fileDate = DateFormat('yyyyMMdd_HHmmss');
 
   static String currency(num v) =>
       '${AppConstants.currency} ${_currency.format(v)}';
-  static String qty(num v) => _int.format(v);
+  static String qty(num v) {
+    if (v == v.roundToDouble()) {
+      return _int.format(v);
+    }
+    return _decimal.format(v);
+  }
+
+  static String qtyWithUnit(num v, String unit) {
+    final trimmedUnit = unit.trim();
+    if (trimmedUnit.isEmpty) return qty(v);
+    return '${qty(v)} $trimmedUnit';
+  }
   static String date(DateTime d) => _date.format(d);
   static String dateTime(DateTime d) => _dateTime.format(d);
   static String fileDate(DateTime d) => _fileDate.format(d);

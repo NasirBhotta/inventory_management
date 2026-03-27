@@ -9,7 +9,7 @@ class StockRepository {
   Future<void> move({
     required int productId,
     required MovementType type,
-    required int quantity,
+    required double quantity,
     required String note,
   }) async {
     if (quantity <= 0) throw const AppException('Quantity must be > 0');
@@ -21,7 +21,14 @@ class StockRepository {
         whereArgs: [productId],
       );
       if (rows.isEmpty) throw const AppException('Product not found');
-      final current = rows.first['quantity'] as int;
+      final allowsFractional =
+          ((rows.first['allow_fractional_quantity'] as num?)?.toInt() ?? 0) == 1;
+      if (!allowsFractional && quantity != quantity.roundToDouble()) {
+        throw const ValidationException(
+          'This product only allows whole-number stock changes',
+        );
+      }
+      final current = (rows.first['quantity'] as num).toDouble();
       final next =
           type == MovementType.in_ ? current + quantity : current - quantity;
       if (next < 0)
@@ -37,6 +44,7 @@ class StockRepository {
         'product_id': productId,
         'movement_type': type.label,
         'quantity': quantity,
+        'stock_unit': rows.first['stock_unit'] as String? ?? 'unit',
         'note': note.trim(),
         'movement_date': DateTime.now().toIso8601String(),
       });

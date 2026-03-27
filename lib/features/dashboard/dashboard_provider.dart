@@ -16,7 +16,7 @@ class DashboardStats {
     required this.lowStockItems,
   });
   final int totalProducts;
-  final int totalUnits;
+  final double totalUnits;
   final double totalValue;
   final int lowStockCount;
   final double todaySales;
@@ -34,7 +34,7 @@ Future<DashboardStats> dashboard(DashboardRef ref) async {
 
   return DashboardStats(
     totalProducts: products.length,
-    totalUnits: products.fold(0, (s, p) => s + p.quantity),
+    totalUnits: products.fold(0.0, (s, p) => s + p.quantity),
     totalValue: products.fold(0.0, (s, p) => s + p.totalValue),
     lowStockCount: lowStock.length,
     todaySales: sales['today'] ?? 0,

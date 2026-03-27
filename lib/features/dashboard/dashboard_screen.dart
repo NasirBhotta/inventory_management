@@ -46,10 +46,10 @@ class DashboardScreen extends ConsumerWidget {
       sb.writeln('Low Stock Count,${stats.lowStockCount}');
       sb.writeln();
       sb.writeln('Low Stock Items');
-      sb.writeln('Name,Category,Quantity,Minimum');
+      sb.writeln('Name,Category,Quantity,Minimum,Unit,Partial Qty Allowed');
       for (final item in stats.lowStockItems) {
         sb.writeln(
-          '"${item.name.replaceAll('"', '""')}","${item.category.replaceAll('"', '""')}",${item.quantity},${item.minimumStock}',
+          '"${item.name.replaceAll('"', '""')}","${item.category.replaceAll('"', '""')}",${item.quantity},${item.minimumStock},${item.stockUnit},${item.allowFractionalQuantity ? 'Yes' : 'No'}',
         );
       }
       sb.writeln();
@@ -428,7 +428,7 @@ class _LowStockList extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         Text(
-                          '${p.quantity} left',
+                          '${Fmt.qtyWithUnit(p.quantity, p.stockUnit)} left',
                           style: TextStyle(
                             fontSize: 13,
                             color: cs.error,
@@ -436,7 +436,7 @@ class _LowStockList extends StatelessWidget {
                           ),
                         ),
                         Text(
-                          'Min: ${p.minimumStock}',
+                          'Min: ${Fmt.qtyWithUnit(p.minimumStock, p.stockUnit)}',
                           style: TextStyle(
                             fontSize: 11,
                             color: cs.onSurfaceVariant,

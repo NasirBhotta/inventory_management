@@ -17,26 +17,31 @@ class StockMovement extends Equatable {
     required this.quantity,
     required this.note,
     required this.movementDate,
+    this.stockUnit = 'unit',
   });
 
   final int? id;
   final int productId;
   final String productName;
   final MovementType type;
-  final int quantity;
+  final double quantity;
   final String note;
   final DateTime movementDate;
+  final String stockUnit;
 
   factory StockMovement.fromMap(Map<String, Object?> m) => StockMovement(
     id: m['id'] as int?,
     productId: m['product_id'] as int,
     productName: m['name'] as String? ?? '',
     type: MovementTypeX.fromString(m['movement_type'] as String),
-    quantity: m['quantity'] as int,
+    quantity: (m['quantity'] as num).toDouble(),
     note: m['note'] as String? ?? '',
     movementDate: DateTime.parse(m['movement_date'] as String),
+    stockUnit: (m['stock_unit'] as String? ?? 'unit').trim().isEmpty
+        ? 'unit'
+        : (m['stock_unit'] as String? ?? 'unit').trim(),
   );
 
   @override
-  List<Object?> get props => [id, productId, type, quantity, movementDate];
+  List<Object?> get props => [id, productId, type, quantity, movementDate, stockUnit];
 }

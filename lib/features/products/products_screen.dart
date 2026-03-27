@@ -20,6 +20,7 @@ import 'reorder_planner.dart';
 
 class ProductsScreen extends ConsumerStatefulWidget {
   const ProductsScreen({super.key});
+
   @override
   ConsumerState<ProductsScreen> createState() => _ProductsScreenState();
 }
@@ -31,10 +32,12 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
   final _price = TextEditingController();
   final _stock = TextEditingController();
   final _min = TextEditingController();
+  final _stockUnit = TextEditingController(text: 'unit');
   Product? _editing;
   String _search = '';
   String? _selectedCategory;
   bool _lowStockOnly = false;
+  bool _allowFractionalQuantity = false;
 
   @override
   void dispose() {
@@ -43,26 +46,45 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
     _price.dispose();
     _stock.dispose();
     _min.dispose();
+    _stockUnit.dispose();
     super.dispose();
   }
 
   void _clearForm() {
     _editing = null;
+    _allowFractionalQuantity = false;
     _name.clear();
     _cat.clear();
     _price.clear();
     _stock.clear();
     _min.clear();
+    _stockUnit.text = 'unit';
     _formKey.currentState?.reset();
+    setState(() {});
   }
 
   void _loadForEdit(Product p) {
     _editing = p;
+    _allowFractionalQuantity = p.allowFractionalQuantity;
     _name.text = p.name;
     _cat.text = p.category;
     _price.text = p.unitPrice.toString();
     _stock.text = p.quantity.toString();
     _min.text = p.minimumStock.toString();
+    _stockUnit.text = p.stockUnit;
+    setState(() {});
+  }
+
+  String? _validateStockField(String? value, {required String label}) {
+    final baseError = Validators.positiveDouble(value);
+    if (baseError != null) return baseError;
+    final ruleError = Validators.wholeNumberWhenRequired(
+      value,
+      allowFraction: _allowFractionalQuantity,
+      message: '$label must be a whole number for sealed products',
+    );
+    if (ruleError != null) return ruleError;
+    return null;
   }
 
   Future<void> _submit() async {
@@ -74,8 +96,10 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
         name: _name.text.trim(),
         category: _cat.text.trim(),
         unitPrice: double.parse(_price.text.trim()),
-        quantity: int.parse(_stock.text.trim()),
-        minimumStock: int.parse(_min.text.trim()),
+        quantity: double.parse(_stock.text.trim()),
+        minimumStock: double.parse(_min.text.trim()),
+        stockUnit: _stockUnit.text.trim(),
+        allowFractionalQuantity: _allowFractionalQuantity,
       );
       if (_editing == null) {
         await repo.insert(product);
@@ -95,24 +119,23 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
   Future<void> _delete(Product p) async {
     final ok = await showDialog<bool>(
       context: context,
-      builder:
-          (_) => AlertDialog(
-            title: const Text('Delete Product'),
-            content: Text('Delete "${p.name}"? This cannot be undone.'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(context, true),
-                style: FilledButton.styleFrom(
-                  backgroundColor: Theme.of(context).colorScheme.error,
-                ),
-                child: const Text('Delete'),
-              ),
-            ],
+      builder: (_) => AlertDialog(
+        title: const Text('Delete Product'),
+        content: Text('Delete "${p.name}"? This cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
           ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
     );
     if (ok == true) {
       await ref.read(productRepoProvider).delete(p.id!);
@@ -147,12 +170,14 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
         ..writeln('Units,${plan.totalUnits}')
         ..writeln('Estimated Cost,${plan.totalCost}')
         ..writeln()
-        ..writeln('Product,Category,Current Qty,Minimum,Target Qty,Recommended Buy,Unit Price,Estimated Cost');
+        ..writeln(
+          'Product,Category,Current Qty,Minimum,Target Qty,Recommended Buy,Unit,Unit Price,Estimated Cost,Partial Qty Allowed',
+        );
 
       for (final suggestion in plan.suggestions) {
         final product = suggestion.product;
         sb.writeln(
-          '"${product.name.replaceAll('"', '""')}","${product.category.replaceAll('"', '""')}",${product.quantity},${product.minimumStock},${suggestion.targetStock},${suggestion.recommendedQuantity},${product.unitPrice},${suggestion.estimatedCost}',
+          '"${product.name.replaceAll('"', '""')}","${product.category.replaceAll('"', '""')}",${product.quantity},${product.minimumStock},${suggestion.targetStock},${suggestion.recommendedQuantity},"${product.stockUnit}",${product.unitPrice},${suggestion.estimatedCost},${product.allowFractionalQuantity ? 'Yes' : 'No'}',
         );
       }
 
@@ -174,21 +199,20 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
     return Row(
       children: [
         SizedBox(
-          width: 300,
+          width: 340,
           child: Card(
             margin: const EdgeInsets.all(16),
             child: Padding(
               padding: const EdgeInsets.all(20),
               child: Form(
                 key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                child: ListView(
                   children: [
                     Text(
                       _editing == null ? 'Add Product' : 'Edit Product',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
+                            fontWeight: FontWeight.w700,
+                          ),
                     ),
                     const SizedBox(height: 16),
                     AppTextField(
@@ -204,9 +228,40 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                     ),
                     const SizedBox(height: 12),
                     AppTextField(
+                      controller: _stockUnit,
+                      label: 'Stock Unit',
+                      validator: Validators.required,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Examples: kg, litre, bag, packet, bottle',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: cs.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Allow Partial Quantity'),
+                      subtitle: Text(
+                        _allowFractionalQuantity
+                            ? 'Customers can buy or borrow partial ${_stockUnit.text.trim().isEmpty ? 'units' : _stockUnit.text.trim()} like 1.25'
+                            : 'This product is sold only in whole pieces or sealed packs',
+                      ),
+                      value: _allowFractionalQuantity,
+                      onChanged: (value) {
+                        setState(() => _allowFractionalQuantity = value);
+                        _formKey.currentState?.validate();
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    AppTextField(
                       controller: _price,
-                      label: 'Unit Price (PKR)',
-                      keyboardType: TextInputType.number,
+                      label: 'Price per Unit (PKR)',
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
                       inputFormatters: [
                         FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
                       ],
@@ -216,17 +271,27 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                     AppTextField(
                       controller: _stock,
                       label: 'Opening Stock',
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      validator: Validators.positiveInt,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+                      ],
+                      validator: (value) =>
+                          _validateStockField(value, label: 'Opening stock'),
                     ),
                     const SizedBox(height: 12),
                     AppTextField(
                       controller: _min,
                       label: 'Minimum Stock',
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      validator: Validators.positiveInt,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+                      ],
+                      validator: (value) =>
+                          _validateStockField(value, label: 'Minimum stock'),
                     ),
                     const SizedBox(height: 20),
                     FilledButton(
@@ -261,50 +326,42 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                           prefixIcon: Icon(Icons.search, size: 18),
                           isDense: true,
                         ),
-                        onChanged:
-                            (v) => setState(() => _search = v.toLowerCase()),
+                        onChanged: (v) => setState(() => _search = v.toLowerCase()),
                       ),
                     ),
                     const SizedBox(width: 12),
                     SizedBox(
                       width: 180,
                       child: categoriesAsync.when(
-                        loading:
-                            () => const SizedBox(
-                              height: 36,
-                              child: LinearProgressIndicator(),
+                        loading: () => const SizedBox(
+                          height: 36,
+                          child: LinearProgressIndicator(),
+                        ),
+                        error: (_, __) => const Text(
+                          'Categories unavailable',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        data: (categories) => DropdownButtonFormField<String?>(
+                          isExpanded: true,
+                          value: _selectedCategory,
+                          decoration: const InputDecoration(
+                            labelText: 'Category',
+                            isDense: true,
+                          ),
+                          items: [
+                            const DropdownMenuItem<String?>(
+                              value: null,
+                              child: Text('All'),
                             ),
-                        error:
-                            (_, __) => const Text(
-                              'Categories unavailable',
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                        data:
-                            (categories) => DropdownButtonFormField<String?>(
-                              isExpanded: true,
-                              value: _selectedCategory,
-                              decoration: const InputDecoration(
-                                labelText: 'Category',
-                                isDense: true,
+                            ...categories.map(
+                              (c) => DropdownMenuItem<String?>(
+                                value: c,
+                                child: Text(c, overflow: TextOverflow.ellipsis),
                               ),
-                              items: [
-                                const DropdownMenuItem<String?>(
-                                  value: null,
-                                  child: Text('All'),
-                                ),
-                                ...categories.map(
-                                  (c) => DropdownMenuItem<String?>(
-                                    value: c,
-                                    child: Text(
-                                      c,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                              onChanged:
-                                  (v) => setState(() => _selectedCategory = v),
                             ),
+                          ],
+                          onChanged: (v) => setState(() => _selectedCategory = v),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -318,26 +375,25 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                 const SizedBox(height: 12),
                 Expanded(
                   child: productsAsync.when(
-                    loading:
-                        () => const Center(child: CircularProgressIndicator()),
+                    loading: () => const Center(child: CircularProgressIndicator()),
                     error: (e, _) => Center(child: Text('Error: $e')),
                     data: (products) {
                       final reorderPlan = buildReorderPlan(products);
-                      final filtered =
-                          products
-                              .where(
-                                (p) =>
-                                    _search.isEmpty ||
-                                    p.name.toLowerCase().contains(_search) ||
-                                    p.category.toLowerCase().contains(_search),
-                              )
-                              .where(
-                                (p) =>
-                                    _selectedCategory == null ||
-                                    p.category == _selectedCategory,
-                              )
-                              .where((p) => !_lowStockOnly || p.isLowStock)
-                              .toList();
+                      final filtered = products
+                          .where(
+                            (p) =>
+                                _search.isEmpty ||
+                                p.name.toLowerCase().contains(_search) ||
+                                p.category.toLowerCase().contains(_search) ||
+                                p.stockUnit.toLowerCase().contains(_search),
+                          )
+                          .where(
+                            (p) =>
+                                _selectedCategory == null ||
+                                p.category == _selectedCategory,
+                          )
+                          .where((p) => !_lowStockOnly || p.isLowStock)
+                          .toList();
                       if (filtered.isEmpty) {
                         return const EmptyState(
                           icon: Icons.inventory_2,
@@ -360,91 +416,108 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                               columns: const [
                                 DataColumn2(label: Text('Name'), size: ColumnSize.L),
                                 DataColumn2(label: Text('Category')),
+                                DataColumn2(label: Text('Unit')),
                                 DataColumn2(label: Text('Price'), numeric: true),
                                 DataColumn2(label: Text('Qty'), numeric: true),
                                 DataColumn2(label: Text('Min'), numeric: true),
+                                DataColumn2(label: Text('Partial')),
                                 DataColumn2(label: Text('Value'), numeric: true),
-                                DataColumn2(
-                                  label: Text('Status'),
-                                  size: ColumnSize.S,
-                                ),
+                                DataColumn2(label: Text('Status'), size: ColumnSize.S),
                                 DataColumn2(label: Text(''), size: ColumnSize.S),
                               ],
-                              rows:
-                                  filtered
-                                      .map(
-                                        (p) => DataRow2(
-                                          cells: [
-                                            DataCell(
-                                              Text(
-                                                p.name,
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.w500,
-                                                ),
-                                              ),
+                              rows: filtered
+                                  .map(
+                                    (p) => DataRow2(
+                                      cells: [
+                                        DataCell(
+                                          Text(
+                                            p.name,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w500,
                                             ),
-                                            DataCell(Text(p.category)),
-                                            DataCell(Text(Fmt.currency(p.unitPrice))),
-                                            DataCell(Text(Fmt.qty(p.quantity))),
-                                            DataCell(Text(p.minimumStock.toString())),
-                                            DataCell(Text(Fmt.currency(p.totalValue))),
-                                            DataCell(
-                                              p.isLowStock
-                                                  ? Chip(
-                                                    label: Text(
-                                                      'Low',
-                                                      style: TextStyle(
-                                                        color: cs.onError,
-                                                        fontSize: 11,
-                                                      ),
-                                                    ),
-                                                    backgroundColor: cs.error,
-                                                    padding: EdgeInsets.zero,
-                                                    visualDensity:
-                                                        VisualDensity.compact,
-                                                  )
-                                                  : Chip(
-                                                    label: Text(
-                                                      'OK',
-                                                      style: TextStyle(
-                                                        color: cs.onPrimary,
-                                                        fontSize: 11,
-                                                      ),
-                                                    ),
-                                                    backgroundColor: cs.primary,
-                                                    padding: EdgeInsets.zero,
-                                                    visualDensity:
-                                                        VisualDensity.compact,
-                                                  ),
-                                            ),
-                                            DataCell(
-                                              Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  IconButton(
-                                                    icon: const Icon(
-                                                      Icons.edit_outlined,
-                                                      size: 18,
-                                                    ),
-                                                    onPressed: () => _loadForEdit(p),
-                                                    tooltip: 'Edit',
-                                                  ),
-                                                  IconButton(
-                                                    icon: Icon(
-                                                      Icons.delete_outline,
-                                                      size: 18,
-                                                      color: cs.error,
-                                                    ),
-                                                    onPressed: () => _delete(p),
-                                                    tooltip: 'Delete',
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          ],
+                                          ),
                                         ),
-                                      )
-                                      .toList(),
+                                        DataCell(Text(p.category)),
+                                        DataCell(Text(p.stockUnit)),
+                                        DataCell(
+                                          Text(
+                                            '${Fmt.currency(p.unitPrice)}/${p.stockUnit}',
+                                          ),
+                                        ),
+                                        DataCell(
+                                          Text(Fmt.qtyWithUnit(p.quantity, p.stockUnit)),
+                                        ),
+                                        DataCell(
+                                          Text(
+                                            Fmt.qtyWithUnit(
+                                              p.minimumStock,
+                                              p.stockUnit,
+                                            ),
+                                          ),
+                                        ),
+                                        DataCell(
+                                          Text(
+                                            p.allowFractionalQuantity ? 'Yes' : 'No',
+                                          ),
+                                        ),
+                                        DataCell(Text(Fmt.currency(p.totalValue))),
+                                        DataCell(
+                                          p.isLowStock
+                                              ? Chip(
+                                                  label: Text(
+                                                    'Low',
+                                                    style: TextStyle(
+                                                      color: cs.onError,
+                                                      fontSize: 11,
+                                                    ),
+                                                  ),
+                                                  backgroundColor: cs.error,
+                                                  padding: EdgeInsets.zero,
+                                                  visualDensity:
+                                                      VisualDensity.compact,
+                                                )
+                                              : Chip(
+                                                  label: Text(
+                                                    'OK',
+                                                    style: TextStyle(
+                                                      color: cs.onPrimary,
+                                                      fontSize: 11,
+                                                    ),
+                                                  ),
+                                                  backgroundColor: cs.primary,
+                                                  padding: EdgeInsets.zero,
+                                                  visualDensity:
+                                                      VisualDensity.compact,
+                                                ),
+                                        ),
+                                        DataCell(
+                                          Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              IconButton(
+                                                icon: const Icon(
+                                                  Icons.edit_outlined,
+                                                  size: 18,
+                                                ),
+                                                onPressed: () => _loadForEdit(p),
+                                                tooltip: 'Edit',
+                                              ),
+                                              IconButton(
+                                                icon: Icon(
+                                                  Icons.delete_outline,
+                                                  size: 18,
+                                                  color: cs.error,
+                                                ),
+                                                onPressed: () => _delete(p),
+                                                tooltip: 'Delete',
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  )
+                                  .toList(),
                             ),
                           ),
                         ],
@@ -525,7 +598,7 @@ class _ReorderPlannerCard extends StatelessWidget {
                   backgroundColor: cs.errorContainer,
                   foregroundColor: cs.onErrorContainer,
                   child: Text(
-                    suggestion.recommendedQuantity.toString(),
+                    Fmt.qty(suggestion.recommendedQuantity),
                     style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),
@@ -534,7 +607,7 @@ class _ReorderPlannerCard extends StatelessWidget {
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
                 subtitle: Text(
-                  '${suggestion.product.category} - ${suggestion.product.quantity} in stock - target ${suggestion.targetStock}',
+                  '${suggestion.product.category} • ${Fmt.qtyWithUnit(suggestion.product.quantity, suggestion.product.stockUnit)} in stock • target ${Fmt.qtyWithUnit(suggestion.targetStock, suggestion.product.stockUnit)}',
                 ),
                 trailing: Text(
                   Fmt.currency(suggestion.estimatedCost),
@@ -595,8 +668,8 @@ class _PlannerMetric extends StatelessWidget {
                 Text(
                   value,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
+                        fontWeight: FontWeight.w800,
+                      ),
                 ),
                 const SizedBox(height: 2),
                 Text(label),

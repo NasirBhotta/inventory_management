@@ -12,25 +12,27 @@ class DebtEntry extends Equatable {
     this.note = '',
     this.entryDate,
     this.isPaid = false,
+    this.stockUnit = 'unit',
   });
 
   final int? id;
   final int customerId;
   final int productId;
   final String itemName;
-  final int quantity;
+  final double quantity;
   final double unitPrice;
   final double amountDue;
   final String note;
   final DateTime? entryDate;
   final bool isPaid;
+  final String stockUnit;
 
   factory DebtEntry.fromMap(Map<String, Object?> map) => DebtEntry(
     id: map['id'] as int?,
     customerId: map['customer_id'] as int,
     productId: map['product_id'] as int? ?? 0,
     itemName: map['item_name'] as String? ?? '',
-    quantity: map['quantity'] as int? ?? 0,
+    quantity: (map['quantity'] as num?)?.toDouble() ?? 0,
     unitPrice: (map['unit_price'] as num?)?.toDouble() ?? 0,
     amountDue: (map['amount_due'] as num?)?.toDouble() ?? 0,
     note: map['note'] as String? ?? '',
@@ -39,6 +41,9 @@ class DebtEntry extends Equatable {
             ? null
             : DateTime.tryParse(map['entry_date'] as String),
     isPaid: (map['is_paid'] as int? ?? 0) == 1,
+    stockUnit: (map['stock_unit'] as String? ?? 'unit').trim().isEmpty
+        ? 'unit'
+        : (map['stock_unit'] as String? ?? 'unit').trim(),
   );
 
   Map<String, Object?> toMap() => {
@@ -51,6 +56,7 @@ class DebtEntry extends Equatable {
     'amount_due': amountDue,
     'note': note,
     'is_paid': isPaid ? 1 : 0,
+    'stock_unit': stockUnit.trim().isEmpty ? 'unit' : stockUnit.trim(),
   };
 
   @override
@@ -65,5 +71,6 @@ class DebtEntry extends Equatable {
     note,
     entryDate,
     isPaid,
+    stockUnit,
   ];
 }
