@@ -14,7 +14,11 @@ class DatabaseService {
   Database? _db;
 
   Future<Database> get database async {
-    _db ??= await _open();
+    if (_db == null) {
+      _db = await _open();
+    } else {
+      await _ensureSchema(_db!);
+    }
     return _db!;
   }
 

@@ -166,6 +166,8 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
       ref.invalidate(categoriesProvider);
     } on AppException catch (e) {
       _showSnack(e.message, error: true);
+    } catch (e) {
+      _showSnack('Failed to save product: $e', error: true);
     }
   }
 
