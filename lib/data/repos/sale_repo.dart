@@ -6,6 +6,25 @@ import '../../core/utils/app_logger.dart';
 
 import '../models/sale.dart';
 
+class ProductDemandSummary {
+  const ProductDemandSummary({
+    required this.productId,
+    required this.totalSold,
+    required this.saleCount,
+    this.lastSoldAt,
+  });
+
+  final int productId;
+  final double totalSold;
+  final int saleCount;
+  final DateTime? lastSoldAt;
+
+  double averageDailyDemand(int days) {
+    if (days <= 0) return 0;
+    return totalSold / days;
+  }
+}
+
 class SalesRepository {
   SalesRepository(this._db);
   final DatabaseService _db;
@@ -182,5 +201,35 @@ class SalesRepository {
       ''',
       [limit],
     );
+  }
+
+  Future<Map<int, ProductDemandSummary>> getRecentProductDemand({
+    int days = 30,
+  }) async {
+    final db = await _db.db;
+    final rows = await db.rawQuery(
+      '''
+      SELECT si.product_id,
+             SUM(si.quantity) as total_sold,
+             COUNT(DISTINCT si.sale_id) as sale_count,
+             MAX(s.sale_date) as last_sold_at
+      FROM ${TableNames.saleItems} si
+      JOIN ${TableNames.sales} s ON s.id = si.sale_id
+      WHERE s.sale_date >= datetime('now', '-$days days')
+      GROUP BY si.product_id
+      ''',
+    );
+
+    return {
+      for (final row in rows)
+        (row['product_id'] as num).toInt(): ProductDemandSummary(
+          productId: (row['product_id'] as num).toInt(),
+          totalSold: (row['total_sold'] as num?)?.toDouble() ?? 0,
+          saleCount: (row['sale_count'] as num?)?.toInt() ?? 0,
+          lastSoldAt: row['last_sold_at'] == null
+              ? null
+              : DateTime.tryParse(row['last_sold_at'] as String),
+        ),
+    };
   }
 }

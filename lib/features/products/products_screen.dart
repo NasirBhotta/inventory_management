@@ -21,6 +21,8 @@ import 'reorder_planner.dart';
 class ProductsScreen extends ConsumerStatefulWidget {
   const ProductsScreen({super.key});
 
+  static const int demandWindowDays = 30;
+
   @override
   ConsumerState<ProductsScreen> createState() => _ProductsScreenState();
 }
@@ -169,15 +171,16 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
         ..writeln('Items,${plan.totalItems}')
         ..writeln('Units,${plan.totalUnits}')
         ..writeln('Estimated Cost,${plan.totalCost}')
+        ..writeln('Demand Window Days,${plan.demandWindowDays}')
         ..writeln()
         ..writeln(
-          'Product,Category,Current Qty,Minimum,Target Qty,Recommended Buy,Unit,Unit Price,Estimated Cost,Partial Qty Allowed',
+          'Product,Category,Priority,Reason,Current Qty,Minimum,Target Qty,Recommended Buy,Unit,Unit Price,Estimated Cost,Avg Daily Demand,Days Of Cover,Partial Qty Allowed',
         );
 
       for (final suggestion in plan.suggestions) {
         final product = suggestion.product;
         sb.writeln(
-          '"${product.name.replaceAll('"', '""')}","${product.category.replaceAll('"', '""')}",${product.quantity},${product.minimumStock},${suggestion.targetStock},${suggestion.recommendedQuantity},"${product.stockUnit}",${product.unitPrice},${suggestion.estimatedCost},${product.allowFractionalQuantity ? 'Yes' : 'No'}',
+          '"${product.name.replaceAll('"', '""')}","${product.category.replaceAll('"', '""')}","${suggestion.priorityLabel}","${suggestion.reason.replaceAll('"', '""')}",${product.quantity},${product.minimumStock},${suggestion.targetStock},${suggestion.recommendedQuantity},"${product.stockUnit}",${product.unitPrice},${suggestion.estimatedCost},${suggestion.averageDailyDemand},${suggestion.daysOfCover ?? ''},${product.allowFractionalQuantity ? 'Yes' : 'No'}',
         );
       }
 
@@ -194,6 +197,8 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
   Widget build(BuildContext context) {
     final productsAsync = ref.watch(productsProvider);
     final categoriesAsync = ref.watch(categoriesProvider);
+    final recentDemandAsync =
+        ref.watch(recentProductDemandProvider(ProductsScreen.demandWindowDays));
     final cs = Theme.of(context).colorScheme;
 
     return Row(
@@ -378,7 +383,11 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                     loading: () => const Center(child: CircularProgressIndicator()),
                     error: (e, _) => Center(child: Text('Error: $e')),
                     data: (products) {
-                      final reorderPlan = buildReorderPlan(products);
+                      final reorderPlan = buildReorderPlan(
+                        products,
+                        demandByProduct: recentDemandAsync.valueOrNull ?? const {},
+                        demandWindowDays: ProductsScreen.demandWindowDays,
+                      );
                       final filtered = products
                           .where(
                             (p) =>
@@ -405,6 +414,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                           if (!reorderPlan.isEmpty) ...[
                             _ReorderPlannerCard(
                               plan: reorderPlan,
+                              demandLoading: recentDemandAsync.isLoading,
                               onExport: () => _exportReorderPlan(reorderPlan),
                             ),
                             const SizedBox(height: 12),
@@ -537,10 +547,12 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
 class _ReorderPlannerCard extends StatelessWidget {
   const _ReorderPlannerCard({
     required this.plan,
+    required this.demandLoading,
     required this.onExport,
   });
 
   final ReorderPlan plan;
+  final bool demandLoading;
   final VoidCallback onExport;
 
   @override
@@ -564,8 +576,8 @@ class _ReorderPlannerCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: _PlannerMetric(
-                    label: 'Urgent Items',
-                    value: plan.totalItems.toString(),
+                    label: 'Critical Items',
+                    value: plan.criticalItems.toString(),
                     icon: Icons.warning_amber_rounded,
                     color: cs.error,
                   ),
@@ -573,9 +585,21 @@ class _ReorderPlannerCard extends StatelessWidget {
                 const SizedBox(width: 12),
                 Expanded(
                   child: _PlannerMetric(
-                    label: 'Units to Buy',
-                    value: Fmt.qty(plan.totalUnits),
-                    icon: Icons.shopping_cart_checkout_rounded,
+                    label: 'Demand Signals',
+                    value: plan.demandDrivenItems.toString(),
+                    icon: Icons.insights_outlined,
+                    color: const Color(0xFF0F766E),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _PlannerMetric(
+                    label: 'Avg Cover Days',
+                    value:
+                        plan.averageCoverDays == null
+                            ? '--'
+                            : Fmt.qty(plan.averageCoverDays!),
+                    icon: Icons.event_available_outlined,
                     color: cs.primary,
                   ),
                 ),
@@ -585,29 +609,48 @@ class _ReorderPlannerCard extends StatelessWidget {
                     label: 'Estimated Spend',
                     value: Fmt.currency(plan.totalCost),
                     icon: Icons.payments_outlined,
-                    color: const Color(0xFF0F766E),
+                    color: const Color(0xFF7C2D12),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                demandLoading
+                    ? 'Refreshing demand signals from the last ${plan.demandWindowDays} days...'
+                    : 'Smart priorities use the last ${plan.demandWindowDays} days of sales to estimate stock cover and urgency.',
+                style: TextStyle(
+                  color: cs.onSurfaceVariant,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
             ...plan.suggestions.take(5).map(
               (suggestion) => ListTile(
                 contentPadding: EdgeInsets.zero,
+                isThreeLine: true,
                 leading: CircleAvatar(
-                  backgroundColor: cs.errorContainer,
-                  foregroundColor: cs.onErrorContainer,
+                  backgroundColor: _priorityColor(context, suggestion).withValues(
+                    alpha: 0.14,
+                  ),
+                  foregroundColor: _priorityColor(context, suggestion),
                   child: Text(
-                    Fmt.qty(suggestion.recommendedQuantity),
-                    style: const TextStyle(fontWeight: FontWeight.w700),
+                    suggestion.priorityLabel.substring(0, 1),
+                    style: const TextStyle(fontWeight: FontWeight.w800),
                   ),
                 ),
                 title: Text(
-                  suggestion.product.name,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
+                  '${suggestion.product.name} (${Fmt.qtyWithUnit(suggestion.recommendedQuantity, suggestion.product.stockUnit)})',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
                 subtitle: Text(
-                  '${suggestion.product.category} • ${Fmt.qtyWithUnit(suggestion.product.quantity, suggestion.product.stockUnit)} in stock • target ${Fmt.qtyWithUnit(suggestion.targetStock, suggestion.product.stockUnit)}',
+                  '${suggestion.priorityLabel} - ${suggestion.reason}\n'
+                  '${suggestion.product.category} - in stock ${Fmt.qtyWithUnit(suggestion.product.quantity, suggestion.product.stockUnit)} - target ${Fmt.qtyWithUnit(suggestion.targetStock, suggestion.product.stockUnit)}'
+                  '${suggestion.daysOfCover == null ? '' : ' - cover ${Fmt.qty(suggestion.daysOfCover!)} days'}'
+                  '${suggestion.averageDailyDemand > 0 ? ' - avg ${Fmt.qtyWithUnit(suggestion.averageDailyDemand, suggestion.product.stockUnit)}/day' : ''}',
                 ),
                 trailing: Text(
                   Fmt.currency(suggestion.estimatedCost),
@@ -633,6 +676,20 @@ class _ReorderPlannerCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Color _priorityColor(BuildContext context, ReorderSuggestion suggestion) {
+    final cs = Theme.of(context).colorScheme;
+    switch (suggestion.priorityLabel) {
+      case 'Critical':
+        return cs.error;
+      case 'High':
+        return const Color(0xFFB45309);
+      case 'Medium':
+        return const Color(0xFF0F766E);
+      default:
+        return cs.primary;
+    }
   }
 }
 
