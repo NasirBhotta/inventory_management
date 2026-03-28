@@ -32,6 +32,8 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
   final _name = TextEditingController();
   final _cat = TextEditingController();
   final _price = TextEditingController();
+  final _wholesalePrice = TextEditingController();
+  final _wholesaleMinQty = TextEditingController();
   final _stock = TextEditingController();
   final _min = TextEditingController();
   final _stockUnit = TextEditingController(text: 'unit');
@@ -47,6 +49,8 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
     _name.dispose();
     _cat.dispose();
     _price.dispose();
+    _wholesalePrice.dispose();
+    _wholesaleMinQty.dispose();
     _stock.dispose();
     _min.dispose();
     _stockUnit.dispose();
@@ -59,6 +63,8 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
     _name.clear();
     _cat.clear();
     _price.clear();
+    _wholesalePrice.clear();
+    _wholesaleMinQty.clear();
     _stock.clear();
     _min.clear();
     _stockUnit.text = 'unit';
@@ -72,6 +78,8 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
     _name.text = p.name;
     _cat.text = p.category;
     _price.text = p.unitPrice.toString();
+    _wholesalePrice.text = p.wholesaleUnitPrice?.toString() ?? '';
+    _wholesaleMinQty.text = p.wholesaleMinQuantity?.toString() ?? '';
     _stock.text = p.quantity.toString();
     _min.text = p.minimumStock.toString();
     _stockUnit.text = p.stockUnit;
@@ -90,6 +98,42 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
     return null;
   }
 
+  String? _validateWholesalePrice(String? value) {
+    final trimmed = value?.trim() ?? '';
+    final threshold = _wholesaleMinQty.text.trim();
+    if (trimmed.isEmpty && threshold.isEmpty) return null;
+    if (trimmed.isEmpty || threshold.isEmpty) {
+      return 'Enter both wholesale price and minimum quantity';
+    }
+    final parsed = double.tryParse(trimmed);
+    if (parsed == null || parsed <= 0) {
+      return 'Enter a valid wholesale price';
+    }
+    final retailPrice = double.tryParse(_price.text.trim());
+    if (retailPrice != null && parsed >= retailPrice) {
+      return 'Wholesale price should be lower than retail';
+    }
+    return null;
+  }
+
+  String? _validateWholesaleMinQty(String? value) {
+    final trimmed = value?.trim() ?? '';
+    final wholesalePrice = _wholesalePrice.text.trim();
+    if (trimmed.isEmpty && wholesalePrice.isEmpty) return null;
+    if (trimmed.isEmpty || wholesalePrice.isEmpty) {
+      return 'Enter both wholesale quantity and price';
+    }
+    final parsed = double.tryParse(trimmed);
+    if (parsed == null || parsed <= 0) {
+      return 'Enter a valid quantity threshold';
+    }
+    return Validators.wholeNumberWhenRequired(
+      value,
+      allowFraction: _allowFractionalQuantity,
+      message: 'Wholesale threshold must respect the product quantity rule',
+    );
+  }
+
   Future<void> _submit() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
     final repo = ref.read(productRepoProvider);
@@ -99,6 +143,12 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
         name: _name.text.trim(),
         category: _cat.text.trim(),
         unitPrice: double.parse(_price.text.trim()),
+        wholesaleUnitPrice: _wholesalePrice.text.trim().isEmpty
+            ? null
+            : double.parse(_wholesalePrice.text.trim()),
+        wholesaleMinQuantity: _wholesaleMinQty.text.trim().isEmpty
+            ? null
+            : double.parse(_wholesaleMinQty.text.trim()),
         quantity: double.parse(_stock.text.trim()),
         minimumStock: double.parse(_min.text.trim()),
         stockUnit: _stockUnit.text.trim(),
@@ -284,6 +334,38 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                         FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
                       ],
                       validator: Validators.positiveDouble,
+                    ),
+                    const SizedBox(height: 12),
+                    AppTextField(
+                      controller: _wholesalePrice,
+                      label: 'Wholesale Price (Optional)',
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+                      ],
+                      validator: _validateWholesalePrice,
+                    ),
+                    const SizedBox(height: 12),
+                    AppTextField(
+                      controller: _wholesaleMinQty,
+                      label: 'Wholesale Minimum Qty',
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+                      ],
+                      validator: _validateWholesaleMinQty,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Example: sell at a lower rate when the customer buys 12 or more units.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: cs.onSurfaceVariant,
+                      ),
                     ),
                     const SizedBox(height: 12),
                     AppTextField(
@@ -1029,6 +1111,18 @@ class _ProductInsightsSheet extends StatelessWidget {
                   title: const Text('Slow-Moving Stock'),
                   subtitle: Text(
                     'Excess stock is about ${Fmt.qtyWithUnit(insight.slowMovingSuggestion!.excessUnits, product.stockUnit)} worth ${Fmt.currency(insight.slowMovingSuggestion!.inventoryValue)}.',
+                  ),
+                ),
+              if (product.hasWholesalePricing)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    Icons.local_offer_outlined,
+                    color: const Color(0xFF0F766E),
+                  ),
+                  title: const Text('Wholesale Offer'),
+                  subtitle: Text(
+                    '${Fmt.currency(product.wholesaleUnitPrice!)} per ${product.stockUnit} when quantity reaches ${Fmt.qtyWithUnit(product.wholesaleMinQuantity!, product.stockUnit)}.',
                   ),
                 ),
               ListTile(

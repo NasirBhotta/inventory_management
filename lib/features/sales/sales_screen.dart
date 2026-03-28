@@ -28,6 +28,8 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
   final _formKey = GlobalKey<FormState>();
   bool _finalizing = false;
 
+  double _previewQuantity() => double.tryParse(_qty.text.trim()) ?? 0;
+
   Product? _resolveSelected(List<Product> products) {
     final selectedId = _selected?.id;
     if (selectedId == null) return null;
@@ -55,7 +57,10 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
     if (ruleError != null) return ruleError;
     final quantity = double.tryParse(value?.trim() ?? '') ?? 0;
     if (quantity + existingInCart > product.quantity) {
-      final available = (product.quantity - existingInCart).clamp(0, product.quantity);
+      final available = (product.quantity - existingInCart).clamp(
+        0,
+        product.quantity,
+      );
       return 'Only ${Fmt.qtyWithUnit(available, product.stockUnit)} available';
     }
     return null;
@@ -75,9 +80,11 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
             productId: _selected!.id!,
             productName: _selected!.name,
             quantity: double.parse(_qty.text.trim()),
-            unitPrice: _selected!.unitPrice,
+            retailUnitPrice: _selected!.unitPrice,
             stockUnit: _selected!.stockUnit,
             allowFractionalQuantity: _selected!.allowFractionalQuantity,
+            wholesaleUnitPrice: _selected!.wholesaleUnitPrice,
+            wholesaleMinQuantity: _selected!.wholesaleMinQuantity,
           ),
         );
     _qty.clear();
@@ -119,7 +126,9 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
     final productsAsync = ref.watch(productsProvider);
     final cart = ref.watch(cartProvider);
     final cs = Theme.of(context).colorScheme;
-    final cartTotal = ref.read(cartProvider.notifier).total;
+    final cartNotifier = ref.read(cartProvider.notifier);
+    final cartTotal = cartNotifier.total;
+    final totalSavings = cartNotifier.totalSavings;
 
     return Row(
       children: [
@@ -176,6 +185,15 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
                                           color: cs.onSurfaceVariant,
                                         ),
                                       ),
+                                      if (p.hasWholesalePricing)
+                                        Text(
+                                          'Wholesale: ${Fmt.currency(p.wholesaleUnitPrice!)} from ${Fmt.qtyWithUnit(p.wholesaleMinQuantity!, p.stockUnit)}',
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            color: Color(0xFF0F766E),
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
                                     ],
                                   ),
                                 ),
@@ -197,13 +215,59 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
                           color: cs.primaryContainer.withValues(alpha: 0.3),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: Text(
-                          'Price: ${Fmt.currency(_selected!.unitPrice)} per ${_selected!.stockUnit} | Stock: ${Fmt.qtyWithUnit(_selected!.quantity, _selected!.stockUnit)} | ${_selected!.allowFractionalQuantity ? 'Partial sale allowed' : 'Whole quantity only'}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: cs.primary,
-                            fontWeight: FontWeight.w500,
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Retail: ${Fmt.currency(_selected!.unitPrice)} per ${_selected!.stockUnit} | Stock: ${Fmt.qtyWithUnit(_selected!.quantity, _selected!.stockUnit)}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: cs.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            if (_selected!.hasWholesalePricing)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Text(
+                                  'Wholesale auto-rate: ${Fmt.currency(_selected!.wholesaleUnitPrice!)} when quantity reaches ${Fmt.qtyWithUnit(_selected!.wholesaleMinQuantity!, _selected!.stockUnit)}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: cs.primary,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Text(
+                                _selected!.allowFractionalQuantity
+                                    ? 'Partial sale allowed'
+                                    : 'Whole quantity only',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: cs.primary,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                            if (_selected!.hasWholesalePricing &&
+                                _previewQuantity() > 0)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 6),
+                                child: Text(
+                                  _previewQuantity() >=
+                                          _selected!.wholesaleMinQuantity!
+                                      ? 'Bulk rate will apply for this quantity.'
+                                      : 'Add ${Fmt.qtyWithUnit(_selected!.wholesaleMinQuantity! - _previewQuantity(), _selected!.stockUnit)} more to unlock wholesale.',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: cs.primary,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                     ],
@@ -220,6 +284,7 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
                         FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
                       ],
                       validator: _validateQuantity,
+                      onChanged: (_) => setState(() {}),
                     ),
                     const SizedBox(height: 20),
                     FilledButton.icon(
@@ -268,7 +333,8 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
                                 ),
                               ),
                               subtitle: Text(
-                                '${Fmt.currency(item.unitPrice)} per ${item.stockUnit} • Qty: ${Fmt.qtyWithUnit(item.quantity, item.stockUnit)}',
+                                '${item.pricingTierLabel}: ${Fmt.currency(item.unitPrice)} per ${item.stockUnit} • Qty: ${Fmt.qtyWithUnit(item.quantity, item.stockUnit)}'
+                                '${item.isWholesaleApplied ? ' • Saved ${Fmt.currency(item.savings)}' : ''}',
                               ),
                               trailing: Row(
                                 mainAxisSize: MainAxisSize.min,
@@ -348,6 +414,18 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
                                       color: cs.primary,
                                     ),
                               ),
+                              if (totalSavings > 0)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 2),
+                                  child: Text(
+                                    'Wholesale savings: ${Fmt.currency(totalSavings)}',
+                                    style: const TextStyle(
+                                      color: Color(0xFF0F766E),
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
                             ],
                           ),
                         ),

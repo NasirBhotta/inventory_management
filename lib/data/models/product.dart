@@ -75,8 +75,8 @@ class Product extends Equatable {
     String? name,
     String? category,
     double? unitPrice,
-    double? wholesaleUnitPrice,
-    double? wholesaleMinQuantity,
+    Object? wholesaleUnitPrice = _copyWithSentinel,
+    Object? wholesaleMinQuantity = _copyWithSentinel,
     double? quantity,
     double? minimumStock,
     String? stockUnit,
@@ -86,8 +86,12 @@ class Product extends Equatable {
     name: name ?? this.name,
     category: category ?? this.category,
     unitPrice: unitPrice ?? this.unitPrice,
-    wholesaleUnitPrice: wholesaleUnitPrice ?? this.wholesaleUnitPrice,
-    wholesaleMinQuantity: wholesaleMinQuantity ?? this.wholesaleMinQuantity,
+    wholesaleUnitPrice: wholesaleUnitPrice == _copyWithSentinel
+        ? this.wholesaleUnitPrice
+        : wholesaleUnitPrice as double?,
+    wholesaleMinQuantity: wholesaleMinQuantity == _copyWithSentinel
+        ? this.wholesaleMinQuantity
+        : wholesaleMinQuantity as double?,
     quantity: quantity ?? this.quantity,
     minimumStock: minimumStock ?? this.minimumStock,
     stockUnit: stockUnit ?? this.stockUnit,
@@ -109,3 +113,5 @@ class Product extends Equatable {
     allowFractionalQuantity,
   ];
 }
+
+const Object _copyWithSentinel = Object();
