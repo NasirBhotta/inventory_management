@@ -157,6 +157,18 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
     );
   }
 
+  void _showProductInsights(
+    Product product, {
+    required ProductInsightSnapshot insight,
+  }) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => _ProductInsightsSheet(insight: insight),
+    );
+  }
+
   Future<void> _exportReorderPlan(ReorderPlan plan) async {
     try {
       final appDir = await getApplicationSupportDirectory();
@@ -405,6 +417,14 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                               .map((item) => item.product.id)
                               .whereType<int>()
                               .toSet();
+                      final reorderById = {
+                        for (final item in reorderPlan.suggestions)
+                          if (item.product.id != null) item.product.id!: item,
+                      };
+                      final slowMovingById = {
+                        for (final item in slowMovingPlan.suggestions)
+                          if (item.product.id != null) item.product.id!: item,
+                      };
                       final filtered = products
                           .where(
                             (p) =>
@@ -511,6 +531,39 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                                           Row(
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
+                                              IconButton(
+                                                icon: const Icon(
+                                                  Icons.insights_outlined,
+                                                  size: 18,
+                                                ),
+                                                onPressed: () {
+                                                  final insight =
+                                                      buildProductInsightSnapshot(
+                                                    p,
+                                                    demand:
+                                                        p.id == null
+                                                            ? null
+                                                            : recentDemandAsync
+                                                                .valueOrNull?[p.id],
+                                                    reorderSuggestion:
+                                                        p.id == null
+                                                            ? null
+                                                            : reorderById[p.id],
+                                                    slowMovingSuggestion:
+                                                        p.id == null
+                                                            ? null
+                                                            : slowMovingById[p.id],
+                                                    demandWindowDays:
+                                                        ProductsScreen
+                                                            .demandWindowDays,
+                                                  );
+                                                  _showProductInsights(
+                                                    p,
+                                                    insight: insight,
+                                                  );
+                                                },
+                                                tooltip: 'Insights',
+                                              ),
                                               IconButton(
                                                 icon: const Icon(
                                                   Icons.edit_outlined,
@@ -845,6 +898,187 @@ class _ProductStatusChip extends StatelessWidget {
       padding: EdgeInsets.zero,
       visualDensity: VisualDensity.compact,
     );
+  }
+}
+
+class _ProductInsightsSheet extends StatelessWidget {
+  const _ProductInsightsSheet({required this.insight});
+
+  final ProductInsightSnapshot insight;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final product = insight.product;
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                product.name,
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '${product.category} • ${product.stockUnit}',
+                style: TextStyle(
+                  color: cs.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  SizedBox(
+                    width: 180,
+                    child: _PlannerMetric(
+                      label: 'Status',
+                      value: insight.statusLabel,
+                      icon: Icons.health_and_safety_outlined,
+                      color: _insightColor(context, insight),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 180,
+                    child: _PlannerMetric(
+                      label: 'Stock On Hand',
+                      value: Fmt.qtyWithUnit(product.quantity, product.stockUnit),
+                      icon: Icons.inventory_2_outlined,
+                      color: cs.primary,
+                    ),
+                  ),
+                  SizedBox(
+                    width: 180,
+                    child: _PlannerMetric(
+                      label: 'Daily Demand',
+                      value: insight.averageDailyDemand > 0
+                          ? Fmt.qtyWithUnit(
+                              insight.averageDailyDemand,
+                              product.stockUnit,
+                            )
+                          : 'No signal',
+                      icon: Icons.show_chart_rounded,
+                      color: const Color(0xFF0F766E),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 180,
+                    child: _PlannerMetric(
+                      label: 'Inventory Value',
+                      value: Fmt.currency(insight.inventoryValue),
+                      icon: Icons.payments_outlined,
+                      color: const Color(0xFF7C2D12),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: _insightColor(context, insight).withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Text(
+                  insight.summary,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+              const SizedBox(height: 16),
+              if (insight.daysOfCover != null)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    Icons.event_available_outlined,
+                    color: cs.primary,
+                  ),
+                  title: const Text('Estimated Stock Cover'),
+                  subtitle: Text(
+                    '${Fmt.qty(insight.daysOfCover!)} days at the current sales pace',
+                  ),
+                ),
+              if (insight.reorderSuggestion != null)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    Icons.shopping_cart_checkout_rounded,
+                    color: cs.error,
+                  ),
+                  title: const Text('Recommended Restock'),
+                  subtitle: Text(
+                    'Buy ${Fmt.qtyWithUnit(insight.reorderSuggestion!.recommendedQuantity, product.stockUnit)} to reach ${Fmt.qtyWithUnit(insight.reorderSuggestion!.targetStock, product.stockUnit)}.',
+                  ),
+                ),
+              if (insight.slowMovingSuggestion != null)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    Icons.hourglass_bottom_rounded,
+                    color: cs.secondary,
+                  ),
+                  title: const Text('Slow-Moving Stock'),
+                  subtitle: Text(
+                    'Excess stock is about ${Fmt.qtyWithUnit(insight.slowMovingSuggestion!.excessUnits, product.stockUnit)} worth ${Fmt.currency(insight.slowMovingSuggestion!.inventoryValue)}.',
+                  ),
+                ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(
+                  product.allowFractionalQuantity
+                      ? Icons.straighten
+                      : Icons.inventory,
+                  color: cs.onSurfaceVariant,
+                ),
+                title: const Text('Selling Rule'),
+                subtitle: Text(
+                  product.allowFractionalQuantity
+                      ? 'This item can be sold in partial quantities.'
+                      : 'This item should be sold only in whole units.',
+                ),
+              ),
+              if (!insight.needsAttention)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    Icons.check_circle_outline,
+                    color: cs.primary,
+                  ),
+                  title: const Text('Recommendation'),
+                  subtitle: const Text(
+                    'No immediate action needed. Keep watching demand and refresh stock only when sales pick up.',
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Color _insightColor(BuildContext context, ProductInsightSnapshot insight) {
+    final cs = Theme.of(context).colorScheme;
+    switch (insight.statusLabel) {
+      case 'Critical':
+        return cs.error;
+      case 'High':
+        return const Color(0xFFB45309);
+      case 'Medium':
+        return const Color(0xFF0F766E);
+      case 'Slow Moving':
+        return cs.secondary;
+      default:
+        return cs.primary;
+    }
   }
 }
 

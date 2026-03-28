@@ -58,6 +58,8 @@ class DatabaseService {
         name           TEXT    NOT NULL,
         category       TEXT    NOT NULL,
         unit_price     REAL    NOT NULL DEFAULT 0,
+        wholesale_unit_price REAL,
+        wholesale_min_quantity REAL,
         quantity       REAL    NOT NULL DEFAULT 0,
         minimum_stock  REAL    NOT NULL DEFAULT 0,
         stock_unit     TEXT    NOT NULL DEFAULT 'unit',
@@ -148,6 +150,18 @@ class DatabaseService {
   }
 
   Future<void> _ensureLegacyColumns(Database db) async {
+    await _ensureColumn(
+      db,
+      table: 'products',
+      column: 'wholesale_unit_price',
+      definition: 'REAL',
+    );
+    await _ensureColumn(
+      db,
+      table: 'products',
+      column: 'wholesale_min_quantity',
+      definition: 'REAL',
+    );
     await _ensureColumn(
       db,
       table: 'products',

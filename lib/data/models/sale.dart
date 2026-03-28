@@ -64,18 +64,34 @@ class CartItem extends Equatable {
     required this.productId,
     required this.productName,
     required this.quantity,
-    required this.unitPrice,
+    required this.retailUnitPrice,
     this.stockUnit = 'unit',
     this.allowFractionalQuantity = false,
+    this.wholesaleUnitPrice,
+    this.wholesaleMinQuantity,
   });
 
   final int productId;
   final String productName;
   final double quantity;
-  final double unitPrice;
+  final double retailUnitPrice;
   final String stockUnit;
   final bool allowFractionalQuantity;
+  final double? wholesaleUnitPrice;
+  final double? wholesaleMinQuantity;
 
+  bool get hasWholesalePricing =>
+      wholesaleUnitPrice != null &&
+      wholesaleMinQuantity != null &&
+      wholesaleUnitPrice! > 0 &&
+      wholesaleMinQuantity! > 0;
+  bool get isWholesaleApplied =>
+      hasWholesalePricing && quantity >= wholesaleMinQuantity!;
+  double get unitPrice =>
+      isWholesaleApplied ? wholesaleUnitPrice! : retailUnitPrice;
+  String get pricingTierLabel => isWholesaleApplied ? 'Wholesale' : 'Retail';
+  double get savings =>
+      isWholesaleApplied ? (retailUnitPrice - unitPrice) * quantity : 0;
   double get lineTotal => quantity * unitPrice;
   double get total => lineTotal;
   double get quantityStep => allowFractionalQuantity ? 0.25 : 1.0;
@@ -84,18 +100,22 @@ class CartItem extends Equatable {
     int? productId,
     String? productName,
     double? quantity,
-    double? unitPrice,
+    double? retailUnitPrice,
     String? stockUnit,
     bool? allowFractionalQuantity,
+    double? wholesaleUnitPrice,
+    double? wholesaleMinQuantity,
   }) {
     return CartItem(
       productId: productId ?? this.productId,
       productName: productName ?? this.productName,
       quantity: quantity ?? this.quantity,
-      unitPrice: unitPrice ?? this.unitPrice,
+      retailUnitPrice: retailUnitPrice ?? this.retailUnitPrice,
       stockUnit: stockUnit ?? this.stockUnit,
       allowFractionalQuantity:
           allowFractionalQuantity ?? this.allowFractionalQuantity,
+      wholesaleUnitPrice: wholesaleUnitPrice ?? this.wholesaleUnitPrice,
+      wholesaleMinQuantity: wholesaleMinQuantity ?? this.wholesaleMinQuantity,
     );
   }
 
@@ -104,8 +124,10 @@ class CartItem extends Equatable {
     productId,
     productName,
     quantity,
-    unitPrice,
+    retailUnitPrice,
     stockUnit,
     allowFractionalQuantity,
+    wholesaleUnitPrice,
+    wholesaleMinQuantity,
   ];
 }

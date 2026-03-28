@@ -91,6 +91,31 @@ class SlowMovingPlan {
   bool get isEmpty => suggestions.isEmpty;
 }
 
+class ProductInsightSnapshot {
+  const ProductInsightSnapshot({
+    required this.product,
+    required this.averageDailyDemand,
+    required this.inventoryValue,
+    required this.statusLabel,
+    required this.summary,
+    this.daysOfCover,
+    this.reorderSuggestion,
+    this.slowMovingSuggestion,
+  });
+
+  final Product product;
+  final double averageDailyDemand;
+  final double inventoryValue;
+  final String statusLabel;
+  final String summary;
+  final double? daysOfCover;
+  final ReorderSuggestion? reorderSuggestion;
+  final SlowMovingSuggestion? slowMovingSuggestion;
+
+  bool get needsAttention =>
+      reorderSuggestion != null || slowMovingSuggestion != null;
+}
+
 ReorderPlan buildReorderPlan(
   List<Product> products, {
   Map<int, ProductDemandSummary> demandByProduct = const {},
@@ -164,46 +189,100 @@ SlowMovingPlan buildSlowMovingPlan(
   Map<int, ProductDemandSummary> demandByProduct = const {},
   int demandWindowDays = 30,
 }) {
-  final suggestions = products
-      .map((product) {
-        final demand = product.id == null ? null : demandByProduct[product.id];
-        final averageDailyDemand =
-            demand?.averageDailyDemand(demandWindowDays) ?? 0;
-        final daysOfCover = _daysOfCover(product, averageDailyDemand);
-        final excessUnits = (product.quantity - product.minimumStock).clamp(
-          0,
-          product.quantity,
-        );
-        if (product.quantity <= product.minimumStock || excessUnits <= 0) {
-          return null;
-        }
+  final suggestions =
+      products
+          .map((product) {
+            final demand =
+                product.id == null ? null : demandByProduct[product.id];
+            final averageDailyDemand =
+                demand?.averageDailyDemand(demandWindowDays) ?? 0;
+            final daysOfCover = _daysOfCover(product, averageDailyDemand);
+            final excessUnits = (product.quantity - product.minimumStock).clamp(
+              0,
+              product.quantity,
+            );
+            if (product.quantity <= product.minimumStock || excessUnits <= 0) {
+              return null;
+            }
 
-        if (averageDailyDemand == 0 && product.quantity >= product.minimumStock * 2) {
-          return SlowMovingSuggestion(
-            product: product,
-            averageDailyDemand: averageDailyDemand,
-            excessUnits: excessUnits,
-            reason: 'No sales recorded in the last $demandWindowDays days',
-          );
-        }
+            if (averageDailyDemand == 0 &&
+                product.quantity >= product.minimumStock * 2) {
+              return SlowMovingSuggestion(
+                product: product,
+                averageDailyDemand: averageDailyDemand,
+                excessUnits: excessUnits as double,
+                reason: 'No sales recorded in the last $demandWindowDays days',
+              );
+            }
 
-        if (daysOfCover != null && daysOfCover >= 45) {
-          return SlowMovingSuggestion(
-            product: product,
-            averageDailyDemand: averageDailyDemand,
-            excessUnits: excessUnits,
-            daysOfCover: daysOfCover,
-            reason: 'Current stock covers about ${daysOfCover.ceil()} days',
-          );
-        }
+            if (daysOfCover != null && daysOfCover >= 45) {
+              return SlowMovingSuggestion(
+                product: product,
+                averageDailyDemand: averageDailyDemand,
+                excessUnits: excessUnits as double,
+                daysOfCover: daysOfCover,
+                reason: 'Current stock covers about ${daysOfCover.ceil()} days',
+              );
+            }
 
-        return null;
-      })
-      .whereType<SlowMovingSuggestion>()
-      .toList()
-    ..sort((a, b) => b.inventoryValue.compareTo(a.inventoryValue));
+            return null;
+          })
+          .whereType<SlowMovingSuggestion>()
+          .toList()
+        ..sort((a, b) => b.inventoryValue.compareTo(a.inventoryValue));
 
   return SlowMovingPlan(suggestions, demandWindowDays: demandWindowDays);
+}
+
+ProductInsightSnapshot buildProductInsightSnapshot(
+  Product product, {
+  ProductDemandSummary? demand,
+  ReorderSuggestion? reorderSuggestion,
+  SlowMovingSuggestion? slowMovingSuggestion,
+  int demandWindowDays = 30,
+}) {
+  final averageDailyDemand = demand?.averageDailyDemand(demandWindowDays) ?? 0;
+  final daysOfCover = _daysOfCover(product, averageDailyDemand);
+
+  if (reorderSuggestion != null) {
+    return ProductInsightSnapshot(
+      product: product,
+      averageDailyDemand: averageDailyDemand,
+      inventoryValue: product.totalValue,
+      statusLabel: reorderSuggestion.priorityLabel,
+      summary: reorderSuggestion.reason,
+      daysOfCover: daysOfCover,
+      reorderSuggestion: reorderSuggestion,
+      slowMovingSuggestion: slowMovingSuggestion,
+    );
+  }
+
+  if (slowMovingSuggestion != null) {
+    return ProductInsightSnapshot(
+      product: product,
+      averageDailyDemand: averageDailyDemand,
+      inventoryValue: product.totalValue,
+      statusLabel: 'Slow Moving',
+      summary: slowMovingSuggestion.reason,
+      daysOfCover: daysOfCover,
+      reorderSuggestion: reorderSuggestion,
+      slowMovingSuggestion: slowMovingSuggestion,
+    );
+  }
+
+  return ProductInsightSnapshot(
+    product: product,
+    averageDailyDemand: averageDailyDemand,
+    inventoryValue: product.totalValue,
+    statusLabel: 'Healthy',
+    summary:
+        averageDailyDemand > 0
+            ? 'Stock looks balanced against recent demand'
+            : 'No recent sales signal yet, but stock is within expected range',
+    daysOfCover: daysOfCover,
+    reorderSuggestion: reorderSuggestion,
+    slowMovingSuggestion: slowMovingSuggestion,
+  );
 }
 
 double _buildTargetStock(
