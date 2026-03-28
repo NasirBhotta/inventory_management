@@ -59,6 +59,38 @@ class ReorderPlan {
   bool get isEmpty => suggestions.isEmpty;
 }
 
+class SlowMovingSuggestion {
+  const SlowMovingSuggestion({
+    required this.product,
+    required this.averageDailyDemand,
+    required this.excessUnits,
+    required this.reason,
+    this.daysOfCover,
+  });
+
+  final Product product;
+  final double averageDailyDemand;
+  final double excessUnits;
+  final String reason;
+  final double? daysOfCover;
+
+  double get inventoryValue => product.totalValue;
+}
+
+class SlowMovingPlan {
+  const SlowMovingPlan(this.suggestions, {required this.demandWindowDays});
+
+  final List<SlowMovingSuggestion> suggestions;
+  final int demandWindowDays;
+
+  int get totalItems => suggestions.length;
+  double get tiedUpValue =>
+      suggestions.fold(0, (sum, item) => sum + item.inventoryValue);
+  double get excessUnits =>
+      suggestions.fold(0.0, (sum, item) => sum + item.excessUnits);
+  bool get isEmpty => suggestions.isEmpty;
+}
+
 ReorderPlan buildReorderPlan(
   List<Product> products, {
   Map<int, ProductDemandSummary> demandByProduct = const {},
@@ -125,6 +157,53 @@ ReorderPlan buildReorderPlan(
         });
 
   return ReorderPlan(suggestions, demandWindowDays: demandWindowDays);
+}
+
+SlowMovingPlan buildSlowMovingPlan(
+  List<Product> products, {
+  Map<int, ProductDemandSummary> demandByProduct = const {},
+  int demandWindowDays = 30,
+}) {
+  final suggestions = products
+      .map((product) {
+        final demand = product.id == null ? null : demandByProduct[product.id];
+        final averageDailyDemand =
+            demand?.averageDailyDemand(demandWindowDays) ?? 0;
+        final daysOfCover = _daysOfCover(product, averageDailyDemand);
+        final excessUnits = (product.quantity - product.minimumStock).clamp(
+          0,
+          product.quantity,
+        );
+        if (product.quantity <= product.minimumStock || excessUnits <= 0) {
+          return null;
+        }
+
+        if (averageDailyDemand == 0 && product.quantity >= product.minimumStock * 2) {
+          return SlowMovingSuggestion(
+            product: product,
+            averageDailyDemand: averageDailyDemand,
+            excessUnits: excessUnits,
+            reason: 'No sales recorded in the last $demandWindowDays days',
+          );
+        }
+
+        if (daysOfCover != null && daysOfCover >= 45) {
+          return SlowMovingSuggestion(
+            product: product,
+            averageDailyDemand: averageDailyDemand,
+            excessUnits: excessUnits,
+            daysOfCover: daysOfCover,
+            reason: 'Current stock covers about ${daysOfCover.ceil()} days',
+          );
+        }
+
+        return null;
+      })
+      .whereType<SlowMovingSuggestion>()
+      .toList()
+    ..sort((a, b) => b.inventoryValue.compareTo(a.inventoryValue));
+
+  return SlowMovingPlan(suggestions, demandWindowDays: demandWindowDays);
 }
 
 double _buildTargetStock(

@@ -39,6 +39,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
   String _search = '';
   String? _selectedCategory;
   bool _lowStockOnly = false;
+  bool _slowMovingOnly = false;
   bool _allowFractionalQuantity = false;
 
   @override
@@ -375,6 +376,12 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                       selected: _lowStockOnly,
                       onSelected: (v) => setState(() => _lowStockOnly = v),
                     ),
+                    const SizedBox(width: 8),
+                    FilterChip(
+                      label: const Text('Slow moving'),
+                      selected: _slowMovingOnly,
+                      onSelected: (v) => setState(() => _slowMovingOnly = v),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -388,6 +395,16 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                         demandByProduct: recentDemandAsync.valueOrNull ?? const {},
                         demandWindowDays: ProductsScreen.demandWindowDays,
                       );
+                      final slowMovingPlan = buildSlowMovingPlan(
+                        products,
+                        demandByProduct: recentDemandAsync.valueOrNull ?? const {},
+                        demandWindowDays: ProductsScreen.demandWindowDays,
+                      );
+                      final slowMovingProductIds =
+                          slowMovingPlan.suggestions
+                              .map((item) => item.product.id)
+                              .whereType<int>()
+                              .toSet();
                       final filtered = products
                           .where(
                             (p) =>
@@ -402,6 +419,11 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                                 p.category == _selectedCategory,
                           )
                           .where((p) => !_lowStockOnly || p.isLowStock)
+                          .where(
+                            (p) =>
+                                !_slowMovingOnly ||
+                                (p.id != null && slowMovingProductIds.contains(p.id)),
+                          )
                           .toList();
                       if (filtered.isEmpty) {
                         return const EmptyState(
@@ -417,6 +439,10 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                               demandLoading: recentDemandAsync.isLoading,
                               onExport: () => _exportReorderPlan(reorderPlan),
                             ),
+                            const SizedBox(height: 12),
+                          ],
+                          if (!slowMovingPlan.isEmpty) ...[
+                            _SlowMovingInventoryCard(plan: slowMovingPlan),
                             const SizedBox(height: 12),
                           ],
                           Expanded(
@@ -472,33 +498,14 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                                         ),
                                         DataCell(Text(Fmt.currency(p.totalValue))),
                                         DataCell(
-                                          p.isLowStock
-                                              ? Chip(
-                                                  label: Text(
-                                                    'Low',
-                                                    style: TextStyle(
-                                                      color: cs.onError,
-                                                      fontSize: 11,
-                                                    ),
-                                                  ),
-                                                  backgroundColor: cs.error,
-                                                  padding: EdgeInsets.zero,
-                                                  visualDensity:
-                                                      VisualDensity.compact,
-                                                )
-                                              : Chip(
-                                                  label: Text(
-                                                    'OK',
-                                                    style: TextStyle(
-                                                      color: cs.onPrimary,
-                                                      fontSize: 11,
-                                                    ),
-                                                  ),
-                                                  backgroundColor: cs.primary,
-                                                  padding: EdgeInsets.zero,
-                                                  visualDensity:
-                                                      VisualDensity.compact,
+                                          _ProductStatusChip(
+                                            product: p,
+                                            isSlowMoving:
+                                                p.id != null &&
+                                                slowMovingProductIds.contains(
+                                                  p.id,
                                                 ),
+                                          ),
                                         ),
                                         DataCell(
                                           Row(
@@ -690,6 +697,154 @@ class _ReorderPlannerCard extends StatelessWidget {
       default:
         return cs.primary;
     }
+  }
+}
+
+class _SlowMovingInventoryCard extends StatelessWidget {
+  const _SlowMovingInventoryCard({required this.plan});
+
+  final SlowMovingPlan plan;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            const SectionHeader(title: 'Slow-Moving Stock'),
+            Row(
+              children: [
+                Expanded(
+                  child: _PlannerMetric(
+                    label: 'Quiet Items',
+                    value: plan.totalItems.toString(),
+                    icon: Icons.inventory_outlined,
+                    color: const Color(0xFF92400E),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _PlannerMetric(
+                    label: 'Excess Units',
+                    value: Fmt.qty(plan.excessUnits),
+                    icon: Icons.layers_outlined,
+                    color: const Color(0xFF0F766E),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _PlannerMetric(
+                    label: 'Cash Tied Up',
+                    value: Fmt.currency(plan.tiedUpValue),
+                    icon: Icons.account_balance_wallet_outlined,
+                    color: cs.primary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'These products have more stock than they need based on the last ${plan.demandWindowDays} days of sales.',
+                style: TextStyle(
+                  color: cs.onSurfaceVariant,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            ...plan.suggestions.take(3).map(
+              (suggestion) => ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: CircleAvatar(
+                  backgroundColor: cs.secondaryContainer,
+                  foregroundColor: cs.onSecondaryContainer,
+                  child: const Icon(Icons.hourglass_bottom_rounded, size: 18),
+                ),
+                title: Text(
+                  suggestion.product.name,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                subtitle: Text(
+                  '${suggestion.reason}\n'
+                  'Excess ${Fmt.qtyWithUnit(suggestion.excessUnits, suggestion.product.stockUnit)} - value ${Fmt.currency(suggestion.inventoryValue)}',
+                ),
+                isThreeLine: true,
+                trailing: suggestion.daysOfCover == null
+                    ? null
+                    : Text(
+                        '${Fmt.qty(suggestion.daysOfCover!)} d',
+                        style: TextStyle(
+                          color: cs.primary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+              ),
+            ),
+            if (plan.totalItems > 3)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '+${plan.totalItems - 3} more items look slow moving',
+                  style: TextStyle(
+                    color: cs.onSurfaceVariant,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ProductStatusChip extends StatelessWidget {
+  const _ProductStatusChip({
+    required this.product,
+    required this.isSlowMoving,
+  });
+
+  final Product product;
+  final bool isSlowMoving;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    late final String label;
+    late final Color backgroundColor;
+    late final Color foregroundColor;
+
+    if (product.isLowStock) {
+      label = 'Low';
+      backgroundColor = cs.error;
+      foregroundColor = cs.onError;
+    } else if (isSlowMoving) {
+      label = 'Slow';
+      backgroundColor = cs.secondaryContainer;
+      foregroundColor = cs.onSecondaryContainer;
+    } else {
+      label = 'OK';
+      backgroundColor = cs.primary;
+      foregroundColor = cs.onPrimary;
+    }
+
+    return Chip(
+      label: Text(
+        label,
+        style: TextStyle(
+          color: foregroundColor,
+          fontSize: 11,
+        ),
+      ),
+      backgroundColor: backgroundColor,
+      padding: EdgeInsets.zero,
+      visualDensity: VisualDensity.compact,
+    );
   }
 }
 
