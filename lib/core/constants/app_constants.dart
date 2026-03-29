@@ -2,7 +2,7 @@ abstract class AppConstants {
   static const String appName = 'FertiTrack';
   static const String appVersion = '1.0.0';
   static const String dbName = 'inventory.db';
-  static const int dbVersion = 2;
+  static const int dbVersion = 3;
   static const String backupFolder = 'backups';
   static const String currency = 'PKR';
 }
@@ -12,6 +12,7 @@ abstract class TableNames {
   static const sales = 'sales';
   static const saleItems = 'sale_items';
   static const stock = 'stock_movements';
+  static const purchases = 'purchase_orders';
 }
 
 abstract class AppSpacing {

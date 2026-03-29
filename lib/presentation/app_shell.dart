@@ -7,6 +7,7 @@ import '../features/products/products_screen.dart';
 import '../features/stock/stock_screen.dart';
 import '../features/sales/sales_screen.dart';
 import '../features/reports/report_screen.dart';
+import '../features/purchases/purchases_screen.dart';
 import '../features/backup/backup_screen.dart';
 
 class AppShell extends ConsumerStatefulWidget {
@@ -41,6 +42,11 @@ class _AppShellState extends ConsumerState<AppShell> {
       label: Text('Sales'),
     ),
     NavigationRailDestination(
+      icon: Icon(Icons.shopping_bag_outlined),
+      selectedIcon: Icon(Icons.shopping_bag),
+      label: Text('Purchases'),
+    ),
+    NavigationRailDestination(
       icon: Icon(Icons.person_search_outlined),
       selectedIcon: Icon(Icons.person_search),
       label: Text('Debts'),
@@ -62,6 +68,7 @@ class _AppShellState extends ConsumerState<AppShell> {
     ProductsScreen(),
     StockScreen(),
     SalesScreen(),
+    PurchasesScreen(),
     DebtsScreen(),
     ReportsScreen(),
     BackupScreen(),
@@ -110,3 +117,4 @@ class _AppLogo extends StatelessWidget {
     );
   }
 }
+

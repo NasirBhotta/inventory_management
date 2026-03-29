@@ -133,6 +133,22 @@ class DatabaseService {
       )
     ''');
 
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS purchase_orders (
+        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+        product_id        INTEGER NOT NULL REFERENCES products(id),
+        supplier_name     TEXT    NOT NULL,
+        ordered_quantity  REAL    NOT NULL DEFAULT 0,
+        unit_cost         REAL    NOT NULL DEFAULT 0,
+        stock_unit        TEXT    NOT NULL DEFAULT 'unit',
+        note              TEXT    NOT NULL DEFAULT '',
+        status            TEXT    NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','ordered','received','cancelled')),
+        created_at        TEXT    NOT NULL DEFAULT (datetime('now')),
+        ordered_at        TEXT,
+        received_at       TEXT
+      )
+    ''');
+
     // Indexes for common queries
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_sales_date ON sales(sale_date)',
@@ -148,6 +164,12 @@ class DatabaseService {
     );
     await db.execute(
       'CREATE UNIQUE INDEX IF NOT EXISTS idx_debt_customers_phone ON debt_customers(phone)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_purchase_orders_status ON purchase_orders(status)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_purchase_orders_product ON purchase_orders(product_id)',
     );
 
     await _ensureLegacyColumns(db);
@@ -327,6 +349,66 @@ class DatabaseService {
       table: 'debt_entries',
       column: 'is_paid',
       definition: 'INTEGER NOT NULL DEFAULT 0',
+    );
+    await _ensureColumn(
+      db,
+      table: 'purchase_orders',
+      column: 'product_id',
+      definition: 'INTEGER NOT NULL DEFAULT 0',
+    );
+    await _ensureColumn(
+      db,
+      table: 'purchase_orders',
+      column: 'supplier_name',
+      definition: 'TEXT NOT NULL DEFAULT \'\'',
+    );
+    await _ensureColumn(
+      db,
+      table: 'purchase_orders',
+      column: 'ordered_quantity',
+      definition: 'REAL NOT NULL DEFAULT 0',
+    );
+    await _ensureColumn(
+      db,
+      table: 'purchase_orders',
+      column: 'unit_cost',
+      definition: 'REAL NOT NULL DEFAULT 0',
+    );
+    await _ensureColumn(
+      db,
+      table: 'purchase_orders',
+      column: 'stock_unit',
+      definition: 'TEXT NOT NULL DEFAULT \'unit\'',
+    );
+    await _ensureColumn(
+      db,
+      table: 'purchase_orders',
+      column: 'note',
+      definition: 'TEXT NOT NULL DEFAULT \'\'',
+    );
+    await _ensureColumn(
+      db,
+      table: 'purchase_orders',
+      column: 'status',
+      definition: 'TEXT NOT NULL DEFAULT \'draft\'',
+    );
+    await _ensureColumn(
+      db,
+      table: 'purchase_orders',
+      column: 'created_at',
+      definition: 'TEXT',
+    );
+    await _ensureColumn(
+      db,
+      table: 'purchase_orders',
+      column: 'ordered_at',
+      definition: 'TEXT',
+    );
+    await _ensureColumn(
+      db,
+      table: 'purchase_orders',
+      column: 'received_at',
+      definition: 'TEXT',
     );
   }
 
