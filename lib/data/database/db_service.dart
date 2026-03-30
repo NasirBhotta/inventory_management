@@ -62,6 +62,8 @@ class DatabaseService {
         name           TEXT    NOT NULL,
         category       TEXT    NOT NULL,
         unit_price     REAL    NOT NULL DEFAULT 0,
+        cost_price     REAL    NOT NULL DEFAULT 0,
+        average_cost_price REAL,
         wholesale_unit_price REAL,
         wholesale_min_quantity REAL,
         quantity       REAL    NOT NULL DEFAULT 0,
@@ -89,6 +91,9 @@ class DatabaseService {
         product_id  INTEGER NOT NULL REFERENCES products(id),
         quantity    REAL    NOT NULL,
         unit_price  REAL    NOT NULL,
+        cost_price_at_sale REAL NOT NULL DEFAULT 0,
+        selling_price_at_sale REAL NOT NULL DEFAULT 0,
+        profit REAL NOT NULL DEFAULT 0,
         stock_unit  TEXT    NOT NULL DEFAULT 'unit'
       )
     ''');
@@ -225,6 +230,18 @@ class DatabaseService {
     await _ensureColumn(
       db,
       table: 'products',
+      column: 'cost_price',
+      definition: 'REAL NOT NULL DEFAULT 0',
+    );
+    await _ensureColumn(
+      db,
+      table: 'products',
+      column: 'average_cost_price',
+      definition: 'REAL',
+    );
+    await _ensureColumn(
+      db,
+      table: 'products',
       column: 'minimum_stock',
       definition: 'REAL NOT NULL DEFAULT 0',
     );
@@ -316,6 +333,24 @@ class DatabaseService {
       db,
       table: 'sale_items',
       column: 'unit_price',
+      definition: 'REAL NOT NULL DEFAULT 0',
+    );
+    await _ensureColumn(
+      db,
+      table: 'sale_items',
+      column: 'cost_price_at_sale',
+      definition: 'REAL NOT NULL DEFAULT 0',
+    );
+    await _ensureColumn(
+      db,
+      table: 'sale_items',
+      column: 'selling_price_at_sale',
+      definition: 'REAL NOT NULL DEFAULT 0',
+    );
+    await _ensureColumn(
+      db,
+      table: 'sale_items',
+      column: 'profit',
       definition: 'REAL NOT NULL DEFAULT 0',
     );
     await _ensureColumn(
@@ -629,6 +664,9 @@ class DatabaseService {
       ..sort((a, b) => (b['path'] as String).compareTo(a['path'] as String));
   }
 }
+
+
+
 
 
 

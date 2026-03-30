@@ -31,6 +31,9 @@ class SaleItem extends Equatable {
     required this.productName,
     required this.quantity,
     required this.unitPrice,
+    required this.costPriceAtSale,
+    required this.sellingPriceAtSale,
+    required this.profit,
     this.stockUnit = 'unit',
   });
 
@@ -40,8 +43,13 @@ class SaleItem extends Equatable {
   final String productName;
   final double quantity;
   final double unitPrice;
+  final double costPriceAtSale;
+  final double sellingPriceAtSale;
+  final double profit;
   final String stockUnit;
-  double get lineTotal => quantity * unitPrice;
+  double get lineTotal => quantity * sellingPriceAtSale;
+  double get profitMarginPercent =>
+      lineTotal <= 0 ? 0 : (profit / lineTotal) * 100;
 
   factory SaleItem.fromMap(Map<String, Object?> m) => SaleItem(
     id: m['id'] as int?,
@@ -49,14 +57,29 @@ class SaleItem extends Equatable {
     productId: m['product_id'] as int,
     productName: m['name'] as String? ?? '',
     quantity: (m['quantity'] as num).toDouble(),
-    unitPrice: (m['unit_price'] as num).toDouble(),
+    unitPrice: (m['selling_price_at_sale'] as num?)?.toDouble() ??
+        (m['unit_price'] as num).toDouble(),
+    costPriceAtSale: (m['cost_price_at_sale'] as num?)?.toDouble() ?? 0,
+    sellingPriceAtSale: (m['selling_price_at_sale'] as num?)?.toDouble() ??
+        (m['unit_price'] as num).toDouble(),
+    profit: (m['profit'] as num?)?.toDouble() ?? 0,
     stockUnit: (m['stock_unit'] as String? ?? 'unit').trim().isEmpty
         ? 'unit'
         : (m['stock_unit'] as String? ?? 'unit').trim(),
   );
 
   @override
-  List<Object?> get props => [id, saleId, productId, quantity, unitPrice, stockUnit];
+  List<Object?> get props => [
+    id,
+    saleId,
+    productId,
+    quantity,
+    unitPrice,
+    costPriceAtSale,
+    sellingPriceAtSale,
+    profit,
+    stockUnit,
+  ];
 }
 
 class CartItem extends Equatable {

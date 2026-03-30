@@ -10,6 +10,7 @@ void main() {
         name: 'DAP',
         category: 'Fertilizer',
         unitPrice: 100,
+        costPrice: 70,
         quantity: 2,
         minimumStock: 10,
       ),
@@ -18,6 +19,7 @@ void main() {
         name: 'Urea',
         category: 'Fertilizer',
         unitPrice: 80,
+        costPrice: 55,
         quantity: 10,
         minimumStock: 10,
       ),
@@ -26,6 +28,7 @@ void main() {
         name: 'Seed Pack',
         category: 'Seeds',
         unitPrice: 50,
+        costPrice: 30,
         quantity: 25,
         minimumStock: 10,
       ),
@@ -48,6 +51,7 @@ void main() {
         name: 'Healthy Stock',
         category: 'General',
         unitPrice: 25,
+        costPrice: 15,
         quantity: 50,
         minimumStock: 10,
       ),
@@ -57,3 +61,4 @@ void main() {
     expect(plan.suggestions, isEmpty);
   });
 }
+

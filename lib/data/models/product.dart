@@ -6,6 +6,8 @@ class Product extends Equatable {
     required this.name,
     required this.category,
     required this.unitPrice,
+    required this.costPrice,
+    this.averageCostPrice,
     this.wholesaleUnitPrice,
     this.wholesaleMinQuantity,
     required this.quantity,
@@ -18,6 +20,8 @@ class Product extends Equatable {
   final String name;
   final String category;
   final double unitPrice;
+  final double costPrice;
+  final double? averageCostPrice;
   final double? wholesaleUnitPrice;
   final double? wholesaleMinQuantity;
   final double quantity;
@@ -25,8 +29,14 @@ class Product extends Equatable {
   final String stockUnit;
   final bool allowFractionalQuantity;
 
+  double get sellingPrice => unitPrice;
   bool get isLowStock => quantity <= minimumStock;
   double get totalValue => quantity * unitPrice;
+  double get totalCostValue => quantity * effectiveCostPrice;
+  double get effectiveCostPrice => averageCostPrice ?? costPrice;
+  double get estimatedUnitMargin => unitPrice - effectiveCostPrice;
+  double get estimatedMarginPercent =>
+      unitPrice <= 0 ? 0 : (estimatedUnitMargin / unitPrice) * 100;
   bool get hasWholesalePricing =>
       wholesaleUnitPrice != null &&
       wholesaleMinQuantity != null &&
@@ -46,6 +56,8 @@ class Product extends Equatable {
     name: m['name'] as String,
     category: m['category'] as String,
     unitPrice: (m['unit_price'] as num).toDouble(),
+    costPrice: (m['cost_price'] as num?)?.toDouble() ?? 0,
+    averageCostPrice: (m['average_cost_price'] as num?)?.toDouble(),
     wholesaleUnitPrice: (m['wholesale_unit_price'] as num?)?.toDouble(),
     wholesaleMinQuantity: (m['wholesale_min_quantity'] as num?)?.toDouble(),
     quantity: (m['quantity'] as num).toDouble(),
@@ -62,6 +74,8 @@ class Product extends Equatable {
     'name': name,
     'category': category,
     'unit_price': unitPrice,
+    'cost_price': costPrice,
+    'average_cost_price': averageCostPrice,
     'wholesale_unit_price': wholesaleUnitPrice,
     'wholesale_min_quantity': wholesaleMinQuantity,
     'quantity': quantity,
@@ -75,6 +89,8 @@ class Product extends Equatable {
     String? name,
     String? category,
     double? unitPrice,
+    double? costPrice,
+    Object? averageCostPrice = _copyWithSentinel,
     Object? wholesaleUnitPrice = _copyWithSentinel,
     Object? wholesaleMinQuantity = _copyWithSentinel,
     double? quantity,
@@ -86,6 +102,10 @@ class Product extends Equatable {
     name: name ?? this.name,
     category: category ?? this.category,
     unitPrice: unitPrice ?? this.unitPrice,
+    costPrice: costPrice ?? this.costPrice,
+    averageCostPrice: averageCostPrice == _copyWithSentinel
+        ? this.averageCostPrice
+        : averageCostPrice as double?,
     wholesaleUnitPrice: wholesaleUnitPrice == _copyWithSentinel
         ? this.wholesaleUnitPrice
         : wholesaleUnitPrice as double?,
@@ -105,6 +125,8 @@ class Product extends Equatable {
     name,
     category,
     unitPrice,
+    costPrice,
+    averageCostPrice,
     wholesaleUnitPrice,
     wholesaleMinQuantity,
     quantity,

@@ -1,38 +1,79 @@
-import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../core/utils/formatters.dart';
 import '../../core/widgets/section_header.dart';
 import '../../core/widgets/stat_card.dart';
 import '../../data/repos/providers.dart';
+import '../../data/repos/sale_repo.dart';
 
-class ReportsScreen extends ConsumerWidget {
+class ReportsScreen extends ConsumerStatefulWidget {
   const ReportsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ReportsScreen> createState() => _ReportsScreenState();
+}
+
+class _ReportsScreenState extends ConsumerState<ReportsScreen> {
+  late DateTimeRange _range;
+
+  @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    _range = DateTimeRange(
+      start: DateTime(now.year, now.month, now.day).subtract(const Duration(days: 13)),
+      end: now,
+    );
+  }
+
+  Future<void> _pickRange() async {
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2023),
+      lastDate: DateTime.now(),
+      initialDateRange: _range,
+    );
+    if (picked != null) {
+      setState(() => _range = picked);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final saleRepo = ref.watch(saleRepoProvider);
-    final productRepo = ref.watch(productRepoProvider);
     final cs = Theme.of(context).colorScheme;
 
     return ListView(
       padding: const EdgeInsets.all(24),
       children: [
-        Text(
-          'Reports & Analytics',
-          style: Theme.of(
-            context,
-          ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Reports & Analytics',
+              style: Theme.of(context)
+                  .textTheme
+                  .headlineSmall
+                  ?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            OutlinedButton.icon(
+              onPressed: _pickRange,
+              icon: const Icon(Icons.date_range_outlined),
+              label: Text(
+                '${Fmt.date(_range.start)} - ${Fmt.date(_range.end)}',
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 16),
-        // Sales Summary
-        FutureBuilder<Map<String, double>>(
-          future: saleRepo.getSummary(),
-          builder: (ctx, snap) {
+        FutureBuilder<ProfitSummary>(
+          future: saleRepo.getProfitSummaryByDateRange(_range.start, _range.end),
+          builder: (context, snap) {
             if (!snap.hasData) return const LinearProgressIndicator();
-            final d = snap.data!;
+            final summary = snap.data!;
             return GridView.count(
-              crossAxisCount: 3,
+              crossAxisCount: 4,
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               mainAxisSpacing: 12,
@@ -40,22 +81,28 @@ class ReportsScreen extends ConsumerWidget {
               childAspectRatio: 2.8,
               children: [
                 StatCard(
-                  label: 'Today',
-                  value: Fmt.currency(d['today']!),
-                  icon: Icons.today,
+                  label: 'Revenue',
+                  value: Fmt.currency(summary.revenue),
+                  icon: Icons.receipt_long_outlined,
                   color: cs.primary,
                 ),
                 StatCard(
-                  label: 'This Month',
-                  value: Fmt.currency(d['month']!),
-                  icon: Icons.calendar_month,
-                  color: cs.tertiary,
+                  label: 'Cost',
+                  value: Fmt.currency(summary.cost),
+                  icon: Icons.inventory_2_outlined,
+                  color: const Color(0xFF7C2D12),
                 ),
                 StatCard(
-                  label: 'This Year',
-                  value: Fmt.currency(d['year']!),
-                  icon: Icons.calendar_today,
-                  color: const Color(0xFF6A1B9A),
+                  label: 'Profit',
+                  value: Fmt.currency(summary.profit),
+                  icon: Icons.trending_up_outlined,
+                  color: const Color(0xFF0F766E),
+                ),
+                StatCard(
+                  label: 'Margin %',
+                  value: '${Fmt.qty(summary.marginPercent)}%',
+                  icon: Icons.percent_outlined,
+                  color: const Color(0xFF6366F1),
                 ),
               ],
             );
@@ -65,7 +112,6 @@ class ReportsScreen extends ConsumerWidget {
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Top Products
             Expanded(
               child: Card(
                 child: Padding(
@@ -73,99 +119,39 @@ class ReportsScreen extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const SectionHeader(title: 'Top Products by Revenue'),
-                      FutureBuilder<List<Map<String, Object?>>>(
-                        future: saleRepo.getTopProducts(),
-                        builder: (ctx, snap) {
-                          if (!snap.hasData)
-                            return const LinearProgressIndicator();
+                      const SectionHeader(title: 'Top Profit Products'),
+                      FutureBuilder<List<ProductProfitSummary>>(
+                        future: saleRepo.getTopProfitProducts(
+                          limit: 10,
+                          start: _range.start,
+                          end: _range.end,
+                        ),
+                        builder: (context, snap) {
+                          if (!snap.hasData) return const LinearProgressIndicator();
                           final data = snap.data!;
-                          if (data.isEmpty)
-                            return const Center(
-                              child: Padding(
-                                padding: EdgeInsets.all(32),
-                                child: Text('No sales yet'),
-                              ),
+                          if (data.isEmpty) {
+                            return const Padding(
+                              padding: EdgeInsets.all(32),
+                              child: Text('No profit data in this range'),
                             );
+                          }
                           return Column(
-                            children:
-                                data.asMap().entries.map((entry) {
-                                  final rank = entry.key + 1;
-                                  final item = entry.value;
-                                  final revenue =
-                                      (item['total_revenue'] as num).toDouble();
-                                  final maxRevenue =
-                                      (data.first['total_revenue'] as num)
-                                          .toDouble();
-                                  return Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 6,
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        SizedBox(
-                                          width: 24,
-                                          child: Text(
-                                            '#$rank',
-                                            style: TextStyle(
-                                              color: cs.onSurfaceVariant,
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                        ),
-                                        Expanded(
-                                          flex: 3,
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                item['name'] as String,
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.w500,
-                                                  fontSize: 13,
-                                                ),
-                                              ),
-                                              ClipRRect(
-                                                borderRadius:
-                                                    BorderRadius.circular(4),
-                                                child: LinearProgressIndicator(
-                                                  value: revenue / maxRevenue,
-                                                  backgroundColor: cs
-                                                      .primaryContainer
-                                                      .withOpacity(0.3),
-                                                  color: cs.primary,
-                                                  minHeight: 6,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.end,
-                                          children: [
-                                            Text(
-                                              Fmt.currency(revenue),
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.w700,
-                                                fontSize: 12,
-                                              ),
-                                            ),
-                                            Text(
-                                              '${Fmt.qty(item['total_qty'] as num)} units',
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                color: cs.onSurfaceVariant,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                }).toList(),
+                            children: data.map((item) {
+                              return ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                title: Text(item.productName),
+                                subtitle: Text(
+                                  'Revenue ${Fmt.currency(item.revenue)} | Cost ${Fmt.currency(item.cost)} | Margin ${Fmt.qty(item.marginPercent)}%',
+                                ),
+                                trailing: Text(
+                                  Fmt.currency(item.profit),
+                                  style: TextStyle(
+                                    color: cs.primary,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              );
+                            }).toList(),
                           );
                         },
                       ),
@@ -175,7 +161,6 @@ class ReportsScreen extends ConsumerWidget {
               ),
             ),
             const SizedBox(width: 16),
-            // Stock Levels
             Expanded(
               child: Card(
                 child: Padding(
@@ -183,79 +168,28 @@ class ReportsScreen extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const SectionHeader(title: 'Current Stock Levels'),
-                      FutureBuilder<List<dynamic>>(
-                        future: productRepo.getAll(),
-                        builder: (ctx, snap) {
-                          if (!snap.hasData)
-                            return const LinearProgressIndicator();
-                          final products = snap.data!;
-                          if (products.isEmpty)
-                            return const Padding(
-                              padding: EdgeInsets.all(32),
-                              child: Text('No products'),
-                            );
-                          final maxQty = products
-                              .map((p) => p.quantity)
-                              .reduce((a, b) => a > b ? a : b);
-                          return Column(
-                            children:
-                                products
-                                    .take(10)
-                                    .map(
-                                      (p) => Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                          vertical: 5,
-                                        ),
-                                        child: Row(
-                                          children: [
-                                            Expanded(
-                                              flex: 2,
-                                              child: Text(
-                                                p.name,
-                                                style: const TextStyle(
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w500,
-                                                ),
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Expanded(
-                                              flex: 3,
-                                              child: ClipRRect(
-                                                borderRadius:
-                                                    BorderRadius.circular(4),
-                                                child: LinearProgressIndicator(
-                                                  value:
-                                                      maxQty == 0
-                                                          ? 0
-                                                          : p.quantity / maxQty,
-                                                  backgroundColor:
-                                                      cs.surfaceContainerHighest,
-                                                  color:
-                                                      p.isLowStock
-                                                          ? cs.error
-                                                          : cs.primary,
-                                                  minHeight: 8,
-                                                ),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Text(
-                                              Fmt.qty(p.quantity),
-                                              style: const TextStyle(
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    )
-                                    .toList(),
-                          );
-                        },
+                      const SectionHeader(title: 'Profit SQL Shape'),
+                      Text(
+                        'Revenue = SUM(quantity * selling_price_at_sale)',
+                        style: TextStyle(color: cs.onSurfaceVariant),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Cost = SUM(quantity * cost_price_at_sale)',
+                        style: TextStyle(color: cs.onSurfaceVariant),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Profit = SUM(profit)',
+                        style: TextStyle(color: cs.onSurfaceVariant),
+                      ),
+                      const SizedBox(height: 16),
+                      const Divider(),
+                      const SizedBox(height: 8),
+                      const SectionHeader(title: 'Range Notes'),
+                      Text(
+                        'This report uses stored historical prices from sale items, so later product price changes do not distort old margins.',
+                        style: TextStyle(color: cs.onSurfaceVariant),
                       ),
                     ],
                   ),

@@ -17,6 +17,7 @@ import '../../data/models/product.dart';
 import '../../data/repos/providers.dart';
 import 'product_provider.dart';
 import 'reorder_planner.dart';
+import '../reports/profit_provider.dart';
 
 class ProductsScreen extends ConsumerStatefulWidget {
   const ProductsScreen({super.key});
@@ -32,6 +33,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
   final _name = TextEditingController();
   final _cat = TextEditingController();
   final _price = TextEditingController();
+  final _cost = TextEditingController();
   final _wholesalePrice = TextEditingController();
   final _wholesaleMinQty = TextEditingController();
   final _stock = TextEditingController();
@@ -49,6 +51,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
     _name.dispose();
     _cat.dispose();
     _price.dispose();
+    _cost.dispose();
     _wholesalePrice.dispose();
     _wholesaleMinQty.dispose();
     _stock.dispose();
@@ -63,6 +66,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
     _name.clear();
     _cat.clear();
     _price.clear();
+    _cost.clear();
     _wholesalePrice.clear();
     _wholesaleMinQty.clear();
     _stock.clear();
@@ -78,6 +82,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
     _name.text = p.name;
     _cat.text = p.category;
     _price.text = p.unitPrice.toString();
+    _cost.text = p.costPrice.toString();
     _wholesalePrice.text = p.wholesaleUnitPrice?.toString() ?? '';
     _wholesaleMinQty.text = p.wholesaleMinQuantity?.toString() ?? '';
     _stock.text = p.quantity.toString();
@@ -143,12 +148,15 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
         name: _name.text.trim(),
         category: _cat.text.trim(),
         unitPrice: double.parse(_price.text.trim()),
-        wholesaleUnitPrice: _wholesalePrice.text.trim().isEmpty
-            ? null
-            : double.parse(_wholesalePrice.text.trim()),
-        wholesaleMinQuantity: _wholesaleMinQty.text.trim().isEmpty
-            ? null
-            : double.parse(_wholesaleMinQty.text.trim()),
+        costPrice: double.parse(_cost.text.trim()),
+        wholesaleUnitPrice:
+            _wholesalePrice.text.trim().isEmpty
+                ? null
+                : double.parse(_wholesalePrice.text.trim()),
+        wholesaleMinQuantity:
+            _wholesaleMinQty.text.trim().isEmpty
+                ? null
+                : double.parse(_wholesaleMinQty.text.trim()),
         quantity: double.parse(_stock.text.trim()),
         minimumStock: double.parse(_min.text.trim()),
         stockUnit: _stockUnit.text.trim(),
@@ -174,23 +182,24 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
   Future<void> _delete(Product p) async {
     final ok = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Delete Product'),
-        content: Text('Delete "${p.name}"? This cannot be undone.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+      builder:
+          (_) => AlertDialog(
+            title: const Text('Delete Product'),
+            content: Text('Delete "${p.name}"? This cannot be undone.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: FilledButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.error,
+                ),
+                child: const Text('Delete'),
+              ),
+            ],
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
-            ),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
     );
     if (ok == true) {
       await ref.read(productRepoProvider).delete(p.id!);
@@ -227,20 +236,24 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
       final exportDir = Directory(p.join(appDir.path, 'exports'))
         ..createSync(recursive: true);
       final file = File(
-        p.join(exportDir.path, 'reorder_plan_${Fmt.fileDate(DateTime.now())}.csv'),
+        p.join(
+          exportDir.path,
+          'reorder_plan_${Fmt.fileDate(DateTime.now())}.csv',
+        ),
       );
 
-      final sb = StringBuffer()
-        ..writeln('Reorder Plan')
-        ..writeln('Generated At,${DateTime.now().toIso8601String()}')
-        ..writeln('Items,${plan.totalItems}')
-        ..writeln('Units,${plan.totalUnits}')
-        ..writeln('Estimated Cost,${plan.totalCost}')
-        ..writeln('Demand Window Days,${plan.demandWindowDays}')
-        ..writeln()
-        ..writeln(
-          'Product,Category,Priority,Reason,Current Qty,Minimum,Target Qty,Recommended Buy,Unit,Unit Price,Estimated Cost,Avg Daily Demand,Days Of Cover,Partial Qty Allowed',
-        );
+      final sb =
+          StringBuffer()
+            ..writeln('Reorder Plan')
+            ..writeln('Generated At,${DateTime.now().toIso8601String()}')
+            ..writeln('Items,${plan.totalItems}')
+            ..writeln('Units,${plan.totalUnits}')
+            ..writeln('Estimated Cost,${plan.totalCost}')
+            ..writeln('Demand Window Days,${plan.demandWindowDays}')
+            ..writeln()
+            ..writeln(
+              'Product,Category,Priority,Reason,Current Qty,Minimum,Target Qty,Recommended Buy,Unit,Unit Price,Estimated Cost,Avg Daily Demand,Days Of Cover,Partial Qty Allowed',
+            );
 
       for (final suggestion in plan.suggestions) {
         final product = suggestion.product;
@@ -262,8 +275,9 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
   Widget build(BuildContext context) {
     final productsAsync = ref.watch(productsProvider);
     final categoriesAsync = ref.watch(categoriesProvider);
-    final recentDemandAsync =
-        ref.watch(recentProductDemandProvider(ProductsScreen.demandWindowDays));
+    final recentDemandAsync = ref.watch(
+      recentProductDemandProvider(ProductsScreen.demandWindowDays),
+    );
     final cs = Theme.of(context).colorScheme;
 
     return Row(
@@ -281,8 +295,8 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                     Text(
                       _editing == null ? 'Add Product' : 'Edit Product',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     const SizedBox(height: 16),
                     AppTextField(
@@ -324,6 +338,18 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                         setState(() => _allowFractionalQuantity = value);
                         _formKey.currentState?.validate();
                       },
+                    ),
+                    const SizedBox(height: 12),
+                    AppTextField(
+                      controller: _cost,
+                      label: 'Cost Price (PKR)',
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+                      ],
+                      validator: Validators.nonZeroDouble,
                     ),
                     const SizedBox(height: 12),
                     AppTextField(
@@ -379,8 +405,11 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                       inputFormatters: [
                         FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
                       ],
-                      validator: (value) =>
-                          _validateStockField(value, label: 'Opening stock'),
+                      validator:
+                          (value) => _validateStockField(
+                            value,
+                            label: 'Opening stock',
+                          ),
                     ),
                     const SizedBox(height: 12),
                     AppTextField(
@@ -392,8 +421,11 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                       inputFormatters: [
                         FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
                       ],
-                      validator: (value) =>
-                          _validateStockField(value, label: 'Minimum stock'),
+                      validator:
+                          (value) => _validateStockField(
+                            value,
+                            label: 'Minimum stock',
+                          ),
                     ),
                     const SizedBox(height: 20),
                     FilledButton(
@@ -428,42 +460,50 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                           prefixIcon: Icon(Icons.search, size: 18),
                           isDense: true,
                         ),
-                        onChanged: (v) => setState(() => _search = v.toLowerCase()),
+                        onChanged:
+                            (v) => setState(() => _search = v.toLowerCase()),
                       ),
                     ),
                     const SizedBox(width: 12),
                     SizedBox(
                       width: 180,
                       child: categoriesAsync.when(
-                        loading: () => const SizedBox(
-                          height: 36,
-                          child: LinearProgressIndicator(),
-                        ),
-                        error: (_, __) => const Text(
-                          'Categories unavailable',
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        data: (categories) => DropdownButtonFormField<String?>(
-                          isExpanded: true,
-                          value: _selectedCategory,
-                          decoration: const InputDecoration(
-                            labelText: 'Category',
-                            isDense: true,
-                          ),
-                          items: [
-                            const DropdownMenuItem<String?>(
-                              value: null,
-                              child: Text('All'),
+                        loading:
+                            () => const SizedBox(
+                              height: 36,
+                              child: LinearProgressIndicator(),
                             ),
-                            ...categories.map(
-                              (c) => DropdownMenuItem<String?>(
-                                value: c,
-                                child: Text(c, overflow: TextOverflow.ellipsis),
+                        error:
+                            (_, __) => const Text(
+                              'Categories unavailable',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                        data:
+                            (categories) => DropdownButtonFormField<String?>(
+                              isExpanded: true,
+                              value: _selectedCategory,
+                              decoration: const InputDecoration(
+                                labelText: 'Category',
+                                isDense: true,
                               ),
+                              items: [
+                                const DropdownMenuItem<String?>(
+                                  value: null,
+                                  child: Text('All'),
+                                ),
+                                ...categories.map(
+                                  (c) => DropdownMenuItem<String?>(
+                                    value: c,
+                                    child: Text(
+                                      c,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                              onChanged:
+                                  (v) => setState(() => _selectedCategory = v),
                             ),
-                          ],
-                          onChanged: (v) => setState(() => _selectedCategory = v),
-                        ),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -483,17 +523,20 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                 const SizedBox(height: 12),
                 Expanded(
                   child: productsAsync.when(
-                    loading: () => const Center(child: CircularProgressIndicator()),
+                    loading:
+                        () => const Center(child: CircularProgressIndicator()),
                     error: (e, _) => Center(child: Text('Error: $e')),
                     data: (products) {
                       final reorderPlan = buildReorderPlan(
                         products,
-                        demandByProduct: recentDemandAsync.valueOrNull ?? const {},
+                        demandByProduct:
+                            recentDemandAsync.valueOrNull ?? const {},
                         demandWindowDays: ProductsScreen.demandWindowDays,
                       );
                       final slowMovingPlan = buildSlowMovingPlan(
                         products,
-                        demandByProduct: recentDemandAsync.valueOrNull ?? const {},
+                        demandByProduct:
+                            recentDemandAsync.valueOrNull ?? const {},
                         demandWindowDays: ProductsScreen.demandWindowDays,
                       );
                       final slowMovingProductIds =
@@ -509,26 +552,30 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                         for (final item in slowMovingPlan.suggestions)
                           if (item.product.id != null) item.product.id!: item,
                       };
-                      final filtered = products
-                          .where(
-                            (p) =>
-                                _search.isEmpty ||
-                                p.name.toLowerCase().contains(_search) ||
-                                p.category.toLowerCase().contains(_search) ||
-                                p.stockUnit.toLowerCase().contains(_search),
-                          )
-                          .where(
-                            (p) =>
-                                _selectedCategory == null ||
-                                p.category == _selectedCategory,
-                          )
-                          .where((p) => !_lowStockOnly || p.isLowStock)
-                          .where(
-                            (p) =>
-                                !_slowMovingOnly ||
-                                (p.id != null && slowMovingProductIds.contains(p.id)),
-                          )
-                          .toList();
+                      final filtered =
+                          products
+                              .where(
+                                (p) =>
+                                    _search.isEmpty ||
+                                    p.name.toLowerCase().contains(_search) ||
+                                    p.category.toLowerCase().contains(
+                                      _search,
+                                    ) ||
+                                    p.stockUnit.toLowerCase().contains(_search),
+                              )
+                              .where(
+                                (p) =>
+                                    _selectedCategory == null ||
+                                    p.category == _selectedCategory,
+                              )
+                              .where((p) => !_lowStockOnly || p.isLowStock)
+                              .where(
+                                (p) =>
+                                    !_slowMovingOnly ||
+                                    (p.id != null &&
+                                        slowMovingProductIds.contains(p.id)),
+                              )
+                              .toList();
                       if (filtered.isEmpty) {
                         return const EmptyState(
                           icon: Icons.inventory_2,
@@ -554,124 +601,151 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen> {
                               columnSpacing: 16,
                               horizontalMargin: 12,
                               columns: const [
-                                DataColumn2(label: Text('Name'), size: ColumnSize.L),
+                                DataColumn2(
+                                  label: Text('Name'),
+                                  size: ColumnSize.L,
+                                ),
                                 DataColumn2(label: Text('Category')),
                                 DataColumn2(label: Text('Unit')),
-                                DataColumn2(label: Text('Price'), numeric: true),
+                                DataColumn2(
+                                  label: Text('Price'),
+                                  numeric: true,
+                                ),
                                 DataColumn2(label: Text('Qty'), numeric: true),
                                 DataColumn2(label: Text('Min'), numeric: true),
                                 DataColumn2(label: Text('Partial')),
-                                DataColumn2(label: Text('Value'), numeric: true),
-                                DataColumn2(label: Text('Status'), size: ColumnSize.S),
-                                DataColumn2(label: Text(''), size: ColumnSize.S),
+                                DataColumn2(
+                                  label: Text('Value'),
+                                  numeric: true,
+                                ),
+                                DataColumn2(
+                                  label: Text('Status'),
+                                  size: ColumnSize.S,
+                                ),
+                                DataColumn2(
+                                  label: Text(''),
+                                  size: ColumnSize.S,
+                                ),
                               ],
-                              rows: filtered
-                                  .map(
-                                    (p) => DataRow2(
-                                      cells: [
-                                        DataCell(
-                                          Text(
-                                            p.name,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w500,
+                              rows:
+                                  filtered
+                                      .map(
+                                        (p) => DataRow2(
+                                          cells: [
+                                            DataCell(
+                                              Text(
+                                                p.name,
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                              ),
                                             ),
-                                          ),
-                                        ),
-                                        DataCell(Text(p.category)),
-                                        DataCell(Text(p.stockUnit)),
-                                        DataCell(
-                                          Text(
-                                            '${Fmt.currency(p.unitPrice)}/${p.stockUnit}',
-                                          ),
-                                        ),
-                                        DataCell(
-                                          Text(Fmt.qtyWithUnit(p.quantity, p.stockUnit)),
-                                        ),
-                                        DataCell(
-                                          Text(
-                                            Fmt.qtyWithUnit(
-                                              p.minimumStock,
-                                              p.stockUnit,
+                                            DataCell(Text(p.category)),
+                                            DataCell(Text(p.stockUnit)),
+                                            DataCell(
+                                              Text(
+                                                '${Fmt.currency(p.unitPrice)}/${p.stockUnit}',
+                                              ),
                                             ),
-                                          ),
-                                        ),
-                                        DataCell(
-                                          Text(
-                                            p.allowFractionalQuantity ? 'Yes' : 'No',
-                                          ),
-                                        ),
-                                        DataCell(Text(Fmt.currency(p.totalValue))),
-                                        DataCell(
-                                          _ProductStatusChip(
-                                            product: p,
-                                            isSlowMoving:
-                                                p.id != null &&
-                                                slowMovingProductIds.contains(
-                                                  p.id,
+                                            DataCell(
+                                              Text(
+                                                Fmt.qtyWithUnit(
+                                                  p.quantity,
+                                                  p.stockUnit,
                                                 ),
-                                          ),
-                                        ),
-                                        DataCell(
-                                          Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              IconButton(
-                                                icon: const Icon(
-                                                  Icons.insights_outlined,
-                                                  size: 18,
-                                                ),
-                                                onPressed: () {
-                                                  final insight =
-                                                      buildProductInsightSnapshot(
-                                                    p,
-                                                    demand:
-                                                        p.id == null
-                                                            ? null
-                                                            : recentDemandAsync
-                                                                .valueOrNull?[p.id],
-                                                    reorderSuggestion:
-                                                        p.id == null
-                                                            ? null
-                                                            : reorderById[p.id],
-                                                    slowMovingSuggestion:
-                                                        p.id == null
-                                                            ? null
-                                                            : slowMovingById[p.id],
-                                                    demandWindowDays:
-                                                        ProductsScreen
-                                                            .demandWindowDays,
-                                                  );
-                                                  _showProductInsights(
-                                                    p,
-                                                    insight: insight,
-                                                  );
-                                                },
-                                                tooltip: 'Insights',
                                               ),
-                                              IconButton(
-                                                icon: const Icon(
-                                                  Icons.edit_outlined,
-                                                  size: 18,
+                                            ),
+                                            DataCell(
+                                              Text(
+                                                Fmt.qtyWithUnit(
+                                                  p.minimumStock,
+                                                  p.stockUnit,
                                                 ),
-                                                onPressed: () => _loadForEdit(p),
-                                                tooltip: 'Edit',
                                               ),
-                                              IconButton(
-                                                icon: Icon(
-                                                  Icons.delete_outline,
-                                                  size: 18,
-                                                  color: cs.error,
-                                                ),
-                                                onPressed: () => _delete(p),
-                                                tooltip: 'Delete',
+                                            ),
+                                            DataCell(
+                                              Text(
+                                                p.allowFractionalQuantity
+                                                    ? 'Yes'
+                                                    : 'No',
                                               ),
-                                            ],
-                                          ),
+                                            ),
+                                            DataCell(
+                                              Text(Fmt.currency(p.totalValue)),
+                                            ),
+                                            DataCell(
+                                              _ProductStatusChip(
+                                                product: p,
+                                                isSlowMoving:
+                                                    p.id != null &&
+                                                    slowMovingProductIds
+                                                        .contains(p.id),
+                                              ),
+                                            ),
+                                            DataCell(
+                                              Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  IconButton(
+                                                    icon: const Icon(
+                                                      Icons.insights_outlined,
+                                                      size: 18,
+                                                    ),
+                                                    onPressed: () {
+                                                      final insight = buildProductInsightSnapshot(
+                                                        p,
+                                                        demand:
+                                                            p.id == null
+                                                                ? null
+                                                                : recentDemandAsync
+                                                                    .valueOrNull?[p
+                                                                    .id],
+                                                        reorderSuggestion:
+                                                            p.id == null
+                                                                ? null
+                                                                : reorderById[p
+                                                                    .id],
+                                                        slowMovingSuggestion:
+                                                            p.id == null
+                                                                ? null
+                                                                : slowMovingById[p
+                                                                    .id],
+                                                        demandWindowDays:
+                                                            ProductsScreen
+                                                                .demandWindowDays,
+                                                      );
+                                                      _showProductInsights(
+                                                        p,
+                                                        insight: insight,
+                                                      );
+                                                    },
+                                                    tooltip: 'Insights',
+                                                  ),
+                                                  IconButton(
+                                                    icon: const Icon(
+                                                      Icons.edit_outlined,
+                                                      size: 18,
+                                                    ),
+                                                    onPressed:
+                                                        () => _loadForEdit(p),
+                                                    tooltip: 'Edit',
+                                                  ),
+                                                  IconButton(
+                                                    icon: Icon(
+                                                      Icons.delete_outline,
+                                                      size: 18,
+                                                      color: cs.error,
+                                                    ),
+                                                    onPressed: () => _delete(p),
+                                                    tooltip: 'Delete',
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
                                         ),
-                                      ],
-                                    ),
-                                  )
-                                  .toList(),
+                                      )
+                                      .toList(),
                             ),
                           ),
                         ],
@@ -772,39 +846,42 @@ class _ReorderPlannerCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 8),
-            ...plan.suggestions.take(5).map(
-              (suggestion) => ListTile(
-                contentPadding: EdgeInsets.zero,
-                isThreeLine: true,
-                leading: CircleAvatar(
-                  backgroundColor: _priorityColor(context, suggestion).withValues(
-                    alpha: 0.14,
+            ...plan.suggestions
+                .take(5)
+                .map(
+                  (suggestion) => ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    isThreeLine: true,
+                    leading: CircleAvatar(
+                      backgroundColor: _priorityColor(
+                        context,
+                        suggestion,
+                      ).withValues(alpha: 0.14),
+                      foregroundColor: _priorityColor(context, suggestion),
+                      child: Text(
+                        suggestion.priorityLabel.substring(0, 1),
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    title: Text(
+                      '${suggestion.product.name} (${Fmt.qtyWithUnit(suggestion.recommendedQuantity, suggestion.product.stockUnit)})',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    subtitle: Text(
+                      '${suggestion.priorityLabel} - ${suggestion.reason}\n'
+                      '${suggestion.product.category} - in stock ${Fmt.qtyWithUnit(suggestion.product.quantity, suggestion.product.stockUnit)} - target ${Fmt.qtyWithUnit(suggestion.targetStock, suggestion.product.stockUnit)}'
+                      '${suggestion.daysOfCover == null ? '' : ' - cover ${Fmt.qty(suggestion.daysOfCover!)} days'}'
+                      '${suggestion.averageDailyDemand > 0 ? ' - avg ${Fmt.qtyWithUnit(suggestion.averageDailyDemand, suggestion.product.stockUnit)}/day' : ''}',
+                    ),
+                    trailing: Text(
+                      Fmt.currency(suggestion.estimatedCost),
+                      style: TextStyle(
+                        color: cs.primary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ),
-                  foregroundColor: _priorityColor(context, suggestion),
-                  child: Text(
-                    suggestion.priorityLabel.substring(0, 1),
-                    style: const TextStyle(fontWeight: FontWeight.w800),
-                  ),
                 ),
-                title: Text(
-                  '${suggestion.product.name} (${Fmt.qtyWithUnit(suggestion.recommendedQuantity, suggestion.product.stockUnit)})',
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-                subtitle: Text(
-                  '${suggestion.priorityLabel} - ${suggestion.reason}\n'
-                  '${suggestion.product.category} - in stock ${Fmt.qtyWithUnit(suggestion.product.quantity, suggestion.product.stockUnit)} - target ${Fmt.qtyWithUnit(suggestion.targetStock, suggestion.product.stockUnit)}'
-                  '${suggestion.daysOfCover == null ? '' : ' - cover ${Fmt.qty(suggestion.daysOfCover!)} days'}'
-                  '${suggestion.averageDailyDemand > 0 ? ' - avg ${Fmt.qtyWithUnit(suggestion.averageDailyDemand, suggestion.product.stockUnit)}/day' : ''}',
-                ),
-                trailing: Text(
-                  Fmt.currency(suggestion.estimatedCost),
-                  style: TextStyle(
-                    color: cs.primary,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ),
             if (plan.totalItems > 5)
               Align(
                 alignment: Alignment.centerLeft,
@@ -894,34 +971,40 @@ class _SlowMovingInventoryCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 8),
-            ...plan.suggestions.take(3).map(
-              (suggestion) => ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: CircleAvatar(
-                  backgroundColor: cs.secondaryContainer,
-                  foregroundColor: cs.onSecondaryContainer,
-                  child: const Icon(Icons.hourglass_bottom_rounded, size: 18),
-                ),
-                title: Text(
-                  suggestion.product.name,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-                subtitle: Text(
-                  '${suggestion.reason}\n'
-                  'Excess ${Fmt.qtyWithUnit(suggestion.excessUnits, suggestion.product.stockUnit)} - value ${Fmt.currency(suggestion.inventoryValue)}',
-                ),
-                isThreeLine: true,
-                trailing: suggestion.daysOfCover == null
-                    ? null
-                    : Text(
-                        '${Fmt.qty(suggestion.daysOfCover!)} d',
-                        style: TextStyle(
-                          color: cs.primary,
-                          fontWeight: FontWeight.w700,
-                        ),
+            ...plan.suggestions
+                .take(3)
+                .map(
+                  (suggestion) => ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: CircleAvatar(
+                      backgroundColor: cs.secondaryContainer,
+                      foregroundColor: cs.onSecondaryContainer,
+                      child: const Icon(
+                        Icons.hourglass_bottom_rounded,
+                        size: 18,
                       ),
-              ),
-            ),
+                    ),
+                    title: Text(
+                      suggestion.product.name,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    subtitle: Text(
+                      '${suggestion.reason}\n'
+                      'Excess ${Fmt.qtyWithUnit(suggestion.excessUnits, suggestion.product.stockUnit)} - value ${Fmt.currency(suggestion.inventoryValue)}',
+                    ),
+                    isThreeLine: true,
+                    trailing:
+                        suggestion.daysOfCover == null
+                            ? null
+                            : Text(
+                              '${Fmt.qty(suggestion.daysOfCover!)} d',
+                              style: TextStyle(
+                                color: cs.primary,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                  ),
+                ),
             if (plan.totalItems > 3)
               Align(
                 alignment: Alignment.centerLeft,
@@ -941,10 +1024,7 @@ class _SlowMovingInventoryCard extends StatelessWidget {
 }
 
 class _ProductStatusChip extends StatelessWidget {
-  const _ProductStatusChip({
-    required this.product,
-    required this.isSlowMoving,
-  });
+  const _ProductStatusChip({required this.product, required this.isSlowMoving});
 
   final Product product;
   final bool isSlowMoving;
@@ -973,10 +1053,7 @@ class _ProductStatusChip extends StatelessWidget {
     return Chip(
       label: Text(
         label,
-        style: TextStyle(
-          color: foregroundColor,
-          fontSize: 11,
-        ),
+        style: TextStyle(color: foregroundColor, fontSize: 11),
       ),
       backgroundColor: backgroundColor,
       padding: EdgeInsets.zero,
@@ -985,13 +1062,13 @@ class _ProductStatusChip extends StatelessWidget {
   }
 }
 
-class _ProductInsightsSheet extends StatelessWidget {
+class _ProductInsightsSheet extends ConsumerWidget {
   const _ProductInsightsSheet({required this.insight});
 
   final ProductInsightSnapshot insight;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
     final product = insight.product;
 
@@ -1006,8 +1083,8 @@ class _ProductInsightsSheet extends StatelessWidget {
               Text(
                 product.name,
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
+                  fontWeight: FontWeight.w800,
+                ),
               ),
               const SizedBox(height: 6),
               Text(
@@ -1035,7 +1112,10 @@ class _ProductInsightsSheet extends StatelessWidget {
                     width: 180,
                     child: _PlannerMetric(
                       label: 'Stock On Hand',
-                      value: Fmt.qtyWithUnit(product.quantity, product.stockUnit),
+                      value: Fmt.qtyWithUnit(
+                        product.quantity,
+                        product.stockUnit,
+                      ),
                       icon: Icons.inventory_2_outlined,
                       color: cs.primary,
                     ),
@@ -1044,12 +1124,13 @@ class _ProductInsightsSheet extends StatelessWidget {
                     width: 180,
                     child: _PlannerMetric(
                       label: 'Daily Demand',
-                      value: insight.averageDailyDemand > 0
-                          ? Fmt.qtyWithUnit(
-                              insight.averageDailyDemand,
-                              product.stockUnit,
-                            )
-                          : 'No signal',
+                      value:
+                          insight.averageDailyDemand > 0
+                              ? Fmt.qtyWithUnit(
+                                insight.averageDailyDemand,
+                                product.stockUnit,
+                              )
+                              : 'No signal',
                       icon: Icons.show_chart_rounded,
                       color: const Color(0xFF0F766E),
                     ),
@@ -1063,6 +1144,48 @@ class _ProductInsightsSheet extends StatelessWidget {
                       color: const Color(0xFF7C2D12),
                     ),
                   ),
+                  ...ref
+                      .watch(productProfitSummaryProvider(product.id!))
+                      .when(
+                        data: (summary) {
+                          if (summary == null || summary.profit == 0) {
+                            return <Widget>[];
+                          }
+                          return [
+                            SizedBox(
+                              width: 180,
+                              child: _PlannerMetric(
+                                label: 'Total Profit',
+                                value: Fmt.currency(summary.profit),
+                                icon: Icons.trending_up_outlined,
+                                color: const Color(0xFF0F766E),
+                              ),
+                            ),
+                            SizedBox(
+                              width: 180,
+                              child: _PlannerMetric(
+                                label: 'Margin',
+                                value: '${Fmt.qty(summary.marginPercent)}%',
+                                icon: Icons.percent_outlined,
+                                color: cs.primary,
+                              ),
+                            ),
+                          ];
+                        },
+                        loading:
+                            () => <Widget>[
+                              const SizedBox(
+                                width: 180,
+                                child: _PlannerMetric(
+                                  label: 'Total Profit',
+                                  value: '...',
+                                  icon: Icons.trending_up_outlined,
+                                  color: Color(0xFF0F766E),
+                                ),
+                              ),
+                            ],
+                        error: (e, __) => <Widget>[],
+                      ),
                 ],
               ),
               const SizedBox(height: 16),
@@ -1070,7 +1193,10 @@ class _ProductInsightsSheet extends StatelessWidget {
                 width: double.infinity,
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: _insightColor(context, insight).withValues(alpha: 0.08),
+                  color: _insightColor(
+                    context,
+                    insight,
+                  ).withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: Text(
@@ -1118,9 +1244,9 @@ class _ProductInsightsSheet extends StatelessWidget {
               if (product.hasWholesalePricing)
                 ListTile(
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(
+                  leading: const Icon(
                     Icons.local_offer_outlined,
-                    color: const Color(0xFF0F766E),
+                    color: Color(0xFF0F766E),
                   ),
                   title: const Text('Wholesale Offer'),
                   subtitle: Text(
@@ -1145,10 +1271,7 @@ class _ProductInsightsSheet extends StatelessWidget {
               if (!insight.needsAttention)
                 ListTile(
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(
-                    Icons.check_circle_outline,
-                    color: cs.primary,
-                  ),
+                  leading: Icon(Icons.check_circle_outline, color: cs.primary),
                   title: const Text('Recommendation'),
                   subtitle: const Text(
                     'No immediate action needed. Keep watching demand and refresh stock only when sales pick up.',
@@ -1210,8 +1333,8 @@ class _PlannerMetric extends StatelessWidget {
                 Text(
                   value,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(label),

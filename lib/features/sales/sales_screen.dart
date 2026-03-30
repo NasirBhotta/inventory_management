@@ -453,3 +453,4 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
     );
   }
 }
+

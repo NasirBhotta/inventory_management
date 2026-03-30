@@ -1,15 +1,17 @@
 import 'dart:io';
+
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+
 import '../../core/utils/formatters.dart';
-import '../../core/widgets/stat_card.dart';
 import '../../core/widgets/section_header.dart';
-import '../../data/repos/sale_repo.dart';
+import '../../core/widgets/stat_card.dart';
 import '../../data/repos/providers.dart';
+import '../../data/repos/sale_repo.dart';
 import 'dashboard_provider.dart';
 
 class DashboardScreen extends ConsumerWidget {
@@ -22,7 +24,8 @@ class DashboardScreen extends ConsumerWidget {
   ) async {
     try {
       final repo = ref.read(saleRepoProvider);
-      final trend = await repo.getDailySales(days: 14);
+      final salesTrend = await repo.getDailySales(days: 14);
+      final profitTrend = await repo.getDailyProfit(days: 14);
 
       final appDir = await getApplicationSupportDirectory();
       final exportDir = Directory(p.join(appDir.path, 'exports'))
@@ -32,31 +35,34 @@ class DashboardScreen extends ConsumerWidget {
       final stamp = now.toIso8601String().replaceAll(':', '-');
       final file = File(p.join(exportDir.path, 'dashboard_report_$stamp.csv'));
 
-      final sb = StringBuffer();
-      sb.writeln('Inventory Dashboard Report');
-      sb.writeln('Generated At,${now.toIso8601String()}');
-      sb.writeln();
-      sb.writeln('Metric,Value');
-      sb.writeln('Total Products,${stats.totalProducts}');
-      sb.writeln('Units in Stock,${stats.totalUnits}');
-      sb.writeln('Stock Value,${stats.totalValue}');
-      sb.writeln('Today Sales,${stats.todaySales}');
-      sb.writeln('Month Sales,${stats.monthSales}');
-      sb.writeln('Outstanding Debt,${stats.outstandingDebt}');
-      sb.writeln('Low Stock Count,${stats.lowStockCount}');
-      sb.writeln();
-      sb.writeln('Low Stock Items');
-      sb.writeln('Name,Category,Quantity,Minimum,Unit,Partial Qty Allowed');
-      for (final item in stats.lowStockItems) {
-        sb.writeln(
-          '"${item.name.replaceAll('"', '""')}","${item.category.replaceAll('"', '""')}",${item.quantity},${item.minimumStock},${item.stockUnit},${item.allowFractionalQuantity ? 'Yes' : 'No'}',
-        );
-      }
-      sb.writeln();
-      sb.writeln('14-Day Sales Trend');
-      sb.writeln('Day,Total');
-      for (final row in trend) {
+      final sb = StringBuffer()
+        ..writeln('Inventory Dashboard Report')
+        ..writeln('Generated At,${now.toIso8601String()}')
+        ..writeln()
+        ..writeln('Metric,Value')
+        ..writeln('Total Products,${stats.totalProducts}')
+        ..writeln('Units in Stock,${stats.totalUnits}')
+        ..writeln('Stock Value,${stats.totalValue}')
+        ..writeln('Today Sales,${stats.todaySales}')
+        ..writeln('Month Sales,${stats.monthSales}')
+        ..writeln('Today Profit,${stats.totalProfitToday}')
+        ..writeln('14 Day Profit,${stats.totalProfit14Days}')
+        ..writeln('Outstanding Debt,${stats.outstandingDebt}')
+        ..writeln('Low Stock Count,${stats.lowStockCount}')
+        ..writeln()
+        ..writeln('14-Day Sales Trend')
+        ..writeln('Day,Total');
+
+      for (final row in salesTrend) {
         sb.writeln('${row['day']},${row['total'] ?? 0}');
+      }
+
+      sb
+        ..writeln()
+        ..writeln('14-Day Profit Trend')
+        ..writeln('Day,Profit');
+      for (final row in profitTrend) {
+        sb.writeln('${row['day']},${row['profit'] ?? 0}');
       }
 
       await file.writeAsString(sb.toString());
@@ -79,14 +85,13 @@ class DashboardScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final statsAsync = ref.watch(dashboardProvider);
     final cs = Theme.of(context).colorScheme;
+    final saleRepo = ref.watch(saleRepoProvider);
 
     return statsAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, stack) => Center(child: Text('Error: $e')),
       data: (stats) => RefreshIndicator(
-        onRefresh: () async {
-          ref.invalidate(dashboardProvider);
-        },
+        onRefresh: () async => ref.invalidate(dashboardProvider),
         child: ListView(
           padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 28),
           children: [
@@ -99,16 +104,16 @@ class DashboardScreen extends ConsumerWidget {
                     Text(
                       'Overview',
                       style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.5,
-                      ),
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.5,
+                          ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       'Welcome back! Here is your business at a glance.',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: cs.onSurfaceVariant,
-                      ),
+                            color: cs.onSurfaceVariant,
+                          ),
                     ),
                   ],
                 ),
@@ -116,7 +121,7 @@ class DashboardScreen extends ConsumerWidget {
                   onPressed: () => _exportReport(context, ref, stats),
                   icon: const Icon(Icons.download, size: 18),
                   label: const Text('Export Report'),
-                )
+                ),
               ],
             ),
             const SizedBox(height: 24),
@@ -138,25 +143,37 @@ class DashboardScreen extends ConsumerWidget {
                   label: 'Units in Stock',
                   value: Fmt.qty(stats.totalUnits),
                   icon: Icons.warehouse_rounded,
-                  color: const Color(0xFF0EA5E9), // Sky blue
+                  color: const Color(0xFF0EA5E9),
                 ),
                 StatCard(
                   label: 'Stock Value',
                   value: Fmt.currency(stats.totalValue),
                   icon: Icons.account_balance_wallet_rounded,
-                  color: const Color(0xFF6366F1), // Indigo
+                  color: const Color(0xFF6366F1),
                 ),
                 StatCard(
                   label: 'Today\'s Sales',
                   value: Fmt.currency(stats.todaySales),
                   icon: Icons.trending_up_rounded,
-                  color: const Color(0xFF10B981), // Emerald
+                  color: const Color(0xFF10B981),
                 ),
                 StatCard(
                   label: 'Monthly Sales',
                   value: Fmt.currency(stats.monthSales),
                   icon: Icons.calendar_month_rounded,
-                  color: const Color(0xFF8B5CF6), // Violet
+                  color: const Color(0xFF8B5CF6),
+                ),
+                StatCard(
+                  label: 'Today Profit',
+                  value: Fmt.currency(stats.totalProfitToday),
+                  icon: Icons.show_chart_rounded,
+                  color: const Color(0xFF0F766E),
+                ),
+                StatCard(
+                  label: 'Profit (14 Days)',
+                  value: Fmt.currency(stats.totalProfit14Days),
+                  icon: Icons.insights_outlined,
+                  color: const Color(0xFF7C2D12),
                 ),
                 StatCard(
                   label: 'Outstanding Debt',
@@ -168,7 +185,9 @@ class DashboardScreen extends ConsumerWidget {
                   label: 'Low Stock Alerts',
                   value: stats.lowStockCount.toString(),
                   icon: Icons.warning_rounded,
-                  color: stats.lowStockCount > 0 ? const Color(0xFFEF4444) : const Color(0xFFF59E0B),
+                  color: stats.lowStockCount > 0
+                      ? const Color(0xFFEF4444)
+                      : const Color(0xFFF59E0B),
                 ),
               ],
             ),
@@ -177,15 +196,30 @@ class DashboardScreen extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
-                  flex: 2,
-                  child: _SalesChart(repo: ref.watch(saleRepoProvider)),
+                  child: _TrendChartCard(
+                    title: 'Sales Overview',
+                    chipLabel: 'Last 14 Days',
+                    future: saleRepo.getDailySales(days: 14),
+                    valueKey: 'total',
+                    valueFormatter: Fmt.currency,
+                    color: cs.primary,
+                  ),
                 ),
                 const SizedBox(width: 24),
-                if (stats.lowStockItems.isNotEmpty)
-                  Expanded(
-                    flex: 1,
-                    child: _LowStockList(items: stats.lowStockItems),
+                Expanded(
+                  child: _TrendChartCard(
+                    title: 'Profit Overview',
+                    chipLabel: 'Last 14 Days',
+                    future: saleRepo.getDailyProfit(days: 14),
+                    valueKey: 'profit',
+                    valueFormatter: Fmt.currency,
+                    color: const Color(0xFF0F766E),
                   ),
+                ),
+                if (stats.lowStockItems.isNotEmpty) ...[
+                  const SizedBox(width: 24),
+                  Expanded(child: _LowStockList(items: stats.lowStockItems)),
+                ],
               ],
             ),
           ],
@@ -195,9 +229,22 @@ class DashboardScreen extends ConsumerWidget {
   }
 }
 
-class _SalesChart extends StatelessWidget {
-  const _SalesChart({required this.repo});
-  final SalesRepository repo;
+class _TrendChartCard extends StatelessWidget {
+  const _TrendChartCard({
+    required this.title,
+    required this.chipLabel,
+    required this.future,
+    required this.valueKey,
+    required this.valueFormatter,
+    required this.color,
+  });
+
+  final String title;
+  final String chipLabel;
+  final Future<List<Map<String, Object?>>> future;
+  final String valueKey;
+  final String Function(num) valueFormatter;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
@@ -211,9 +258,9 @@ class _SalesChart extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const SectionHeader(title: 'Sales Overview'),
+                SectionHeader(title: title),
                 Chip(
-                  label: const Text('Last 14 Days'),
+                  label: Text(chipLabel),
                   backgroundColor: cs.surfaceContainerHighest,
                 ),
               ],
@@ -222,19 +269,19 @@ class _SalesChart extends StatelessWidget {
             SizedBox(
               height: 300,
               child: FutureBuilder<List<Map<String, Object?>>>(
-                future: repo.getDailySales(days: 14),
+                future: future,
                 builder: (context, snap) {
                   if (!snap.hasData) {
                     return const Center(child: CircularProgressIndicator());
                   }
                   final data = snap.data!;
                   if (data.isEmpty) {
-                    return const Center(child: Text('No sales yet'));
+                    return const Center(child: Text('No data yet'));
                   }
                   final spots = data.asMap().entries.map(
                     (e) => FlSpot(
                       e.key.toDouble(),
-                      (e.value['total'] as num).toDouble(),
+                      ((e.value[valueKey] as num?) ?? 0).toDouble(),
                     ),
                   ).toList();
                   return LineChart(
@@ -268,12 +315,14 @@ class _SalesChart extends StatelessWidget {
                             showTitles: true,
                             getTitlesWidget: (v, _) {
                               final idx = v.toInt();
-                              if (idx < 0 || idx >= data.length) return const SizedBox();
-                              final d = data[idx]['day'] as String;
+                              if (idx < 0 || idx >= data.length) {
+                                return const SizedBox();
+                              }
+                              final day = data[idx]['day'] as String;
                               return Padding(
                                 padding: const EdgeInsets.only(top: 10),
                                 child: Text(
-                                  d.substring(5),
+                                  day.substring(5),
                                   style: TextStyle(
                                     fontSize: 11,
                                     color: cs.onSurfaceVariant,
@@ -284,8 +333,12 @@ class _SalesChart extends StatelessWidget {
                             },
                           ),
                         ),
-                        rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                        topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                        rightTitles: const AxisTitles(
+                          sideTitles: SideTitles(showTitles: false),
+                        ),
+                        topTitles: const AxisTitles(
+                          sideTitles: SideTitles(showTitles: false),
+                        ),
                       ),
                       borderData: FlBorderData(show: false),
                       lineTouchData: LineTouchData(
@@ -294,9 +347,9 @@ class _SalesChart extends StatelessWidget {
                           getTooltipItems: (touchedSpots) {
                             return touchedSpots.map((spot) {
                               return LineTooltipItem(
-                                Fmt.currency(spot.y),
+                                valueFormatter(spot.y),
                                 GoogleFonts.outfit(
-                                  color: cs.primary,
+                                  color: color,
                                   fontWeight: FontWeight.bold,
                                 ),
                               );
@@ -308,7 +361,7 @@ class _SalesChart extends StatelessWidget {
                         LineChartBarData(
                           spots: spots,
                           isCurved: true,
-                          color: cs.primary,
+                          color: color,
                           barWidth: 4,
                           isStrokeCapRound: true,
                           belowBarData: BarAreaData(
@@ -317,8 +370,8 @@ class _SalesChart extends StatelessWidget {
                               begin: Alignment.topCenter,
                               end: Alignment.bottomCenter,
                               colors: [
-                                cs.primary.withValues(alpha: 0.3),
-                                cs.primary.withValues(alpha: 0.0),
+                                color.withValues(alpha: 0.25),
+                                color.withValues(alpha: 0),
                               ],
                             ),
                           ),
@@ -329,7 +382,7 @@ class _SalesChart extends StatelessWidget {
                                 radius: 4,
                                 color: cs.surfaceContainerLowest,
                                 strokeWidth: 2,
-                                strokeColor: cs.primary,
+                                strokeColor: color,
                               );
                             },
                           ),
@@ -384,11 +437,11 @@ class _LowStockList extends StatelessWidget {
                 margin: const EdgeInsets.only(bottom: 12),
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                   color: cs.surfaceContainerLowest,
-                   border: Border.all(
-                     color: cs.outlineVariant.withValues(alpha: 0.4),
-                   ),
-                   borderRadius: BorderRadius.circular(12),
+                  color: cs.surfaceContainerLowest,
+                  border: Border.all(
+                    color: cs.outlineVariant.withValues(alpha: 0.4),
+                  ),
+                  borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(
                   children: [
@@ -448,13 +501,6 @@ class _LowStockList extends StatelessWidget {
                 ),
               ),
             ),
-            if (items.length > 8)
-               Center(
-                 child: TextButton(
-                   onPressed: () {},
-                   child: const Text('View All'),
-                 ),
-               ),
           ],
         ),
       ),

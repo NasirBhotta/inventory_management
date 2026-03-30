@@ -3,7 +3,6 @@ import 'package:inventory_managment_sys/data/database/db_service.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/errors/app_exceptions.dart';
 import '../../core/utils/app_logger.dart';
-
 import '../models/sale.dart';
 
 class ProductDemandSummary {
@@ -25,6 +24,40 @@ class ProductDemandSummary {
   }
 }
 
+class ProductProfitSummary {
+  const ProductProfitSummary({
+    required this.productId,
+    required this.productName,
+    required this.quantitySold,
+    required this.revenue,
+    required this.cost,
+    required this.profit,
+  });
+
+  final int productId;
+  final String productName;
+  final double quantitySold;
+  final double revenue;
+  final double cost;
+  final double profit;
+
+  double get marginPercent => revenue <= 0 ? 0 : (profit / revenue) * 100;
+}
+
+class ProfitSummary {
+  const ProfitSummary({
+    required this.revenue,
+    required this.cost,
+    required this.profit,
+  });
+
+  final double revenue;
+  final double cost;
+  final double profit;
+
+  double get marginPercent => revenue <= 0 ? 0 : (profit / revenue) * 100;
+}
+
 class SalesRepository {
   SalesRepository(this._db);
   final DatabaseService _db;
@@ -37,9 +70,10 @@ class SalesRepository {
       final db = await _db.db;
       return await db.transaction((txn) async {
         final total = cart.fold<double>(0, (s, i) => s + i.lineTotal);
+        final now = DateTime.now().toIso8601String();
 
         final saleId = await txn.insert(TableNames.sales, {
-          'sale_date': DateTime.now().toIso8601String(),
+          'sale_date': now,
           'total_amount': total,
           'note': note,
         });
@@ -54,25 +88,35 @@ class SalesRepository {
             throw DatabaseException('Product not found: ${item.productName}');
           }
 
+          final productRow = rows.first;
           final allowsFractional =
-              ((rows.first['allow_fractional_quantity'] as num?)?.toInt() ?? 0) ==
-              1;
+              ((productRow['allow_fractional_quantity'] as num?)?.toInt() ?? 0) == 1;
           if (!allowsFractional && item.quantity != item.quantity.roundToDouble()) {
             throw const ValidationException(
               'This product can only be sold in whole quantities',
             );
           }
 
-          final current = (rows.first['quantity'] as num).toDouble();
+          final current = (productRow['quantity'] as num).toDouble();
           if (current < item.quantity) {
             throw InsufficientStockException(item.productName);
           }
+
+          final costPrice = (productRow['cost_price'] as num?)?.toDouble() ?? 0;
+          if (costPrice <= 0) {
+            throw ValidationException(
+              'Cost price is missing for ${productRow['name'] as String? ?? item.productName}',
+            );
+          }
+
+          final sellingPrice = item.unitPrice;
+          final itemProfit = (sellingPrice - costPrice) * item.quantity;
 
           await txn.update(
             TableNames.products,
             {
               'quantity': current - item.quantity,
-              'updated_at': DateTime.now().toIso8601String(),
+              'updated_at': now,
             },
             where: 'id = ?',
             whereArgs: [item.productId],
@@ -84,21 +128,22 @@ class SalesRepository {
             'quantity': item.quantity,
             'stock_unit': item.stockUnit,
             'note': 'Sale #$saleId',
-            'movement_date': DateTime.now().toIso8601String(),
+            'movement_date': now,
           });
 
           await txn.insert(TableNames.saleItems, {
             'sale_id': saleId,
             'product_id': item.productId,
             'quantity': item.quantity,
-            'unit_price': item.unitPrice,
+            'unit_price': sellingPrice,
+            'cost_price_at_sale': costPrice,
+            'selling_price_at_sale': sellingPrice,
+            'profit': itemProfit,
             'stock_unit': item.stockUnit,
           });
         }
 
-        appLogger.i(
-          'Sale #$saleId created. Total: $total. Items: ${cart.length}',
-        );
+        appLogger.i('Sale #$saleId created. Total: $total. Items: ${cart.length}');
         return saleId;
       });
     } on AppException {
@@ -186,13 +231,28 @@ class SalesRepository {
     );
   }
 
+  Future<List<Map<String, Object?>>> getDailyProfit({int days = 14}) async {
+    final db = await _db.db;
+    return db.rawQuery(
+      '''
+      SELECT substr(s.sale_date, 1, 10) as day,
+             SUM(si.profit) as profit
+      FROM ${TableNames.saleItems} si
+      JOIN ${TableNames.sales} s ON s.id = si.sale_id
+      WHERE s.sale_date >= datetime('now', '-$days days')
+      GROUP BY substr(s.sale_date, 1, 10)
+      ORDER BY day ASC
+      ''',
+    );
+  }
+
   Future<List<Map<String, Object?>>> getTopProducts({int limit = 10}) async {
     final db = await _db.db;
     return db.rawQuery(
       '''
       SELECT p.name,
              SUM(si.quantity) as total_qty,
-             SUM(si.quantity * si.unit_price) as total_revenue
+             SUM(si.quantity * si.selling_price_at_sale) as total_revenue
       FROM ${TableNames.saleItems} si
       JOIN ${TableNames.products} p ON p.id = si.product_id
       GROUP BY si.product_id, p.name
@@ -201,6 +261,116 @@ class SalesRepository {
       ''',
       [limit],
     );
+  }
+
+  Future<double> getTotalProfitToday() async {
+    final now = DateTime.now();
+    final start = DateTime(now.year, now.month, now.day);
+    return getTotalProfitByDateRange(start, now);
+  }
+
+  Future<double> getTotalProfitByDateRange(DateTime start, DateTime end) async {
+    final db = await _db.db;
+    final rows = await db.rawQuery(
+      '''
+      SELECT SUM(si.profit) as total_profit
+      FROM ${TableNames.saleItems} si
+      JOIN ${TableNames.sales} s ON s.id = si.sale_id
+      WHERE s.sale_date >= ? AND s.sale_date <= ?
+      ''',
+      [start.toIso8601String(), end.toIso8601String()],
+    );
+    return (rows.first['total_profit'] as num?)?.toDouble() ?? 0;
+  }
+
+  Future<List<ProductProfitSummary>> getProfitPerProduct({
+    DateTime? start,
+    DateTime? end,
+  }) async {
+    final db = await _db.db;
+    final where = <String>[];
+    final args = <Object?>[];
+    if (start != null) {
+      where.add('s.sale_date >= ?');
+      args.add(start.toIso8601String());
+    }
+    if (end != null) {
+      where.add('s.sale_date <= ?');
+      args.add(end.toIso8601String());
+    }
+    final whereSql = where.isEmpty ? '' : 'WHERE ${where.join(' AND ')}';
+
+    final rows = await db.rawQuery(
+      '''
+      SELECT si.product_id,
+             p.name,
+             SUM(si.quantity) as quantity_sold,
+             SUM(si.quantity * si.selling_price_at_sale) as revenue,
+             SUM(si.quantity * si.cost_price_at_sale) as cost,
+             SUM(si.profit) as profit
+      FROM ${TableNames.saleItems} si
+      JOIN ${TableNames.sales} s ON s.id = si.sale_id
+      JOIN ${TableNames.products} p ON p.id = si.product_id
+      $whereSql
+      GROUP BY si.product_id, p.name
+      ORDER BY profit DESC, p.name ASC
+      ''',
+      args,
+    );
+
+    return rows
+        .map(
+          (row) => ProductProfitSummary(
+            productId: (row['product_id'] as num).toInt(),
+            productName: row['name'] as String? ?? '',
+            quantitySold: (row['quantity_sold'] as num?)?.toDouble() ?? 0,
+            revenue: (row['revenue'] as num?)?.toDouble() ?? 0,
+            cost: (row['cost'] as num?)?.toDouble() ?? 0,
+            profit: (row['profit'] as num?)?.toDouble() ?? 0,
+          ),
+        )
+        .toList();
+  }
+
+  Future<List<ProductProfitSummary>> getTopProfitProducts({
+    int limit = 5,
+    DateTime? start,
+    DateTime? end,
+  }) async {
+    final summaries = await getProfitPerProduct(start: start, end: end);
+    return summaries.take(limit).toList();
+  }
+
+  Future<ProfitSummary> getProfitSummaryByDateRange(
+    DateTime start,
+    DateTime end,
+  ) async {
+    final db = await _db.db;
+    final rows = await db.rawQuery(
+      '''
+      SELECT SUM(si.quantity * si.selling_price_at_sale) as revenue,
+             SUM(si.quantity * si.cost_price_at_sale) as cost,
+             SUM(si.profit) as profit
+      FROM ${TableNames.saleItems} si
+      JOIN ${TableNames.sales} s ON s.id = si.sale_id
+      WHERE s.sale_date >= ? AND s.sale_date <= ?
+      ''',
+      [start.toIso8601String(), end.toIso8601String()],
+    );
+    final row = rows.first;
+    return ProfitSummary(
+      revenue: (row['revenue'] as num?)?.toDouble() ?? 0,
+      cost: (row['cost'] as num?)?.toDouble() ?? 0,
+      profit: (row['profit'] as num?)?.toDouble() ?? 0,
+    );
+  }
+
+  Future<ProductProfitSummary?> getProductProfitSummary(int productId) async {
+    final summaries = await getProfitPerProduct();
+    for (final summary in summaries) {
+      if (summary.productId == productId) return summary;
+    }
+    return null;
   }
 
   Future<Map<int, ProductDemandSummary>> getRecentProductDemand({
