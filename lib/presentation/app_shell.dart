@@ -6,6 +6,7 @@ import '../features/debts/debts_screen.dart';
 import '../features/products/products_screen.dart';
 import '../features/stock/stock_screen.dart';
 import '../features/sales/sales_screen.dart';
+import '../features/quotations/quotations_screen.dart';
 import '../features/reports/report_screen.dart';
 import '../features/purchases/purchases_screen.dart';
 import '../features/backup/backup_screen.dart';
@@ -35,6 +36,11 @@ class _AppShellState extends ConsumerState<AppShell> {
       icon: Icon(Icons.swap_horiz_outlined),
       selectedIcon: Icon(Icons.swap_horiz),
       label: Text('Stock'),
+    ),
+    NavigationRailDestination(
+      icon: Icon(Icons.request_quote_outlined),
+      selectedIcon: Icon(Icons.request_quote),
+      label: Text('Quotes'),
     ),
     NavigationRailDestination(
       icon: Icon(Icons.point_of_sale_outlined),
@@ -67,6 +73,7 @@ class _AppShellState extends ConsumerState<AppShell> {
     DashboardScreen(),
     ProductsScreen(),
     StockScreen(),
+    QuotationsScreen(),
     SalesScreen(),
     PurchasesScreen(),
     DebtsScreen(),
@@ -117,4 +124,5 @@ class _AppLogo extends StatelessWidget {
     );
   }
 }
+
 

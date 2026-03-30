@@ -3,6 +3,7 @@ import 'package:inventory_managment_sys/data/database/db_service.dart';
 import 'package:inventory_managment_sys/data/repos/backup_repo.dart';
 import 'package:inventory_managment_sys/data/repos/debt_repo.dart';
 import 'package:inventory_managment_sys/data/repos/purchase_repo.dart';
+import 'package:inventory_managment_sys/data/repos/quotation_repo.dart';
 import 'package:inventory_managment_sys/data/repos/product_repo.dart';
 import 'package:inventory_managment_sys/data/repos/sale_repo.dart';
 import 'package:inventory_managment_sys/data/repos/stock_repo.dart';
@@ -39,6 +40,11 @@ final purchaseRepoProvider = Provider<PurchaseOrderRepository>((ref) {
   return PurchaseOrderRepository(ref.watch(dbServiceProvider));
 });
 
+final quotationRepoProvider = Provider<QuotationRepository>((ref) {
+  return QuotationRepository(ref.watch(dbServiceProvider));
+});
+
 final debtRepoProvider = Provider<DebtRepository>((ref) {
   return DebtRepository(ref.watch(dbServiceProvider));
 });
+

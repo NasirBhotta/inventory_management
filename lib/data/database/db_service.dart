@@ -149,6 +149,34 @@ class DatabaseService {
       )
     ''');
 
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS quotations (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        customer_name  TEXT    NOT NULL,
+        customer_phone TEXT    NOT NULL DEFAULT '',
+        note           TEXT    NOT NULL DEFAULT '',
+        total_amount   REAL    NOT NULL DEFAULT 0,
+        item_count     INTEGER NOT NULL DEFAULT 0,
+        status         TEXT    NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','sent','converted')),
+        created_at     TEXT    NOT NULL DEFAULT (datetime('now')),
+        updated_at     TEXT    NOT NULL DEFAULT (datetime('now'))
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS quotation_items (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        quotation_id        INTEGER NOT NULL REFERENCES quotations(id) ON DELETE CASCADE,
+        product_id          INTEGER NOT NULL REFERENCES products(id),
+        product_name        TEXT    NOT NULL,
+        quantity            REAL    NOT NULL DEFAULT 0,
+        retail_unit_price   REAL    NOT NULL DEFAULT 0,
+        wholesale_unit_price REAL,
+        wholesale_min_quantity REAL,
+        stock_unit          TEXT    NOT NULL DEFAULT 'unit',
+        allow_fractional_quantity INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
     // Indexes for common queries
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_sales_date ON sales(sale_date)',
@@ -170,6 +198,12 @@ class DatabaseService {
     );
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_purchase_orders_product ON purchase_orders(product_id)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_quotations_status ON quotations(status)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_quotation_items_quote ON quotation_items(quotation_id)',
     );
 
     await _ensureLegacyColumns(db);
@@ -410,6 +444,108 @@ class DatabaseService {
       column: 'received_at',
       definition: 'TEXT',
     );
+    await _ensureColumn(
+      db,
+      table: 'quotations',
+      column: 'customer_name',
+      definition: 'TEXT NOT NULL DEFAULT \'\'',
+    );
+    await _ensureColumn(
+      db,
+      table: 'quotations',
+      column: 'customer_phone',
+      definition: 'TEXT NOT NULL DEFAULT \'\'',
+    );
+    await _ensureColumn(
+      db,
+      table: 'quotations',
+      column: 'note',
+      definition: 'TEXT NOT NULL DEFAULT \'\'',
+    );
+    await _ensureColumn(
+      db,
+      table: 'quotations',
+      column: 'total_amount',
+      definition: 'REAL NOT NULL DEFAULT 0',
+    );
+    await _ensureColumn(
+      db,
+      table: 'quotations',
+      column: 'item_count',
+      definition: 'INTEGER NOT NULL DEFAULT 0',
+    );
+    await _ensureColumn(
+      db,
+      table: 'quotations',
+      column: 'status',
+      definition: 'TEXT NOT NULL DEFAULT \'draft\'',
+    );
+    await _ensureColumn(
+      db,
+      table: 'quotations',
+      column: 'created_at',
+      definition: 'TEXT',
+    );
+    await _ensureColumn(
+      db,
+      table: 'quotations',
+      column: 'updated_at',
+      definition: 'TEXT',
+    );
+    await _ensureColumn(
+      db,
+      table: 'quotation_items',
+      column: 'quotation_id',
+      definition: 'INTEGER NOT NULL DEFAULT 0',
+    );
+    await _ensureColumn(
+      db,
+      table: 'quotation_items',
+      column: 'product_id',
+      definition: 'INTEGER NOT NULL DEFAULT 0',
+    );
+    await _ensureColumn(
+      db,
+      table: 'quotation_items',
+      column: 'product_name',
+      definition: 'TEXT NOT NULL DEFAULT \'\'',
+    );
+    await _ensureColumn(
+      db,
+      table: 'quotation_items',
+      column: 'quantity',
+      definition: 'REAL NOT NULL DEFAULT 0',
+    );
+    await _ensureColumn(
+      db,
+      table: 'quotation_items',
+      column: 'retail_unit_price',
+      definition: 'REAL NOT NULL DEFAULT 0',
+    );
+    await _ensureColumn(
+      db,
+      table: 'quotation_items',
+      column: 'wholesale_unit_price',
+      definition: 'REAL',
+    );
+    await _ensureColumn(
+      db,
+      table: 'quotation_items',
+      column: 'wholesale_min_quantity',
+      definition: 'REAL',
+    );
+    await _ensureColumn(
+      db,
+      table: 'quotation_items',
+      column: 'stock_unit',
+      definition: 'TEXT NOT NULL DEFAULT \'unit\'',
+    );
+    await _ensureColumn(
+      db,
+      table: 'quotation_items',
+      column: 'allow_fractional_quantity',
+      definition: 'INTEGER NOT NULL DEFAULT 0',
+    );
   }
 
   Future<void> _ensureColumn(
@@ -493,3 +629,7 @@ class DatabaseService {
       ..sort((a, b) => (b['path'] as String).compareTo(a['path'] as String));
   }
 }
+
+
+
+
